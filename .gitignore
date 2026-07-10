@@ -1,0 +1,21 @@
+# local data: db, voices, wakeword models, reports
+data/
+
+# secrets never live in files, but belt-and-braces
+.env
+*.env
+
+# python
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# node / tauri
+frontend/node_modules/
+frontend/dist/
+frontend/src-tauri/target/
+
+# misc
+.DS_Store
+Thumbs.db
