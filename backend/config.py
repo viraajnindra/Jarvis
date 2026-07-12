@@ -30,6 +30,11 @@ AGENT_MAX_ITERATIONS = int(os.getenv("JARVIS_AGENT_MAX_ITERATIONS", "10"))
 
 KEYRING_SERVICE = "jarvis"
 
+# Integrations (tokens live in Credential Manager under KEYRING_SERVICE;
+# only non-secret endpoints/ids belong here or in .env)
+CANVAS_BASE_URL = os.getenv("JARVIS_CANVAS_URL", "").rstrip("/")  # e.g. https://school.instructure.com
+CANVAS_SYNC_INTERVAL_S = int(os.getenv("JARVIS_CANVAS_SYNC_INTERVAL_S", "1800"))
+
 # Voice pipeline
 VOICES_DIR = DATA_DIR / "voices"
 TTS_VOICE = os.getenv("JARVIS_TTS_VOICE", "en_US-ryan-high")  # bake-off winner; swap freely

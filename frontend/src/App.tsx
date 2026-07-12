@@ -29,6 +29,7 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [facts, setFacts] = useState<Fact[]>([]);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [canvasUrl, setCanvasUrl] = useState<string>("");
   const [mode, setMode] = useState<"chat" | "voice">("chat");
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceState, setVoiceState] = useState("IDLE");
@@ -36,6 +37,13 @@ export default function App() {
   const convRef = useRef<string | undefined>(
     localStorage.getItem("jarvis.conversation") ?? undefined,
   );
+
+  useEffect(() => {
+    fetch("http://127.0.0.1:8735/health")
+      .then((r) => r.json())
+      .then((h) => setCanvasUrl(h.canvas_url || ""))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     jarvis.connect();
@@ -119,7 +127,7 @@ export default function App() {
       <Header onOpenMemory={() => setMemoryOpen(true)} />
       {memoryOpen && <MemoryPane facts={facts} onClose={() => setMemoryOpen(false)} />}
       <main className="flex-1 grid grid-cols-[25%_1fr_27%] gap-3 p-3 min-h-0">
-        <TelemetryPanel t={telemetry} />
+        <TelemetryPanel t={telemetry} canvasUrl={canvasUrl} />
         {mode === "chat" ? (
           <ChatMode
             messages={messages}

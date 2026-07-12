@@ -28,6 +28,7 @@ import approval
 import config
 import db
 import memory
+import scheduler
 import telemetry
 import tools
 from voice import VoicePipeline, list_voices, synth_wav_bytes
@@ -91,6 +92,18 @@ async def _startup() -> None:
     log.info("tools registered: %s", sorted(tools.REGISTRY))
     voice_pipeline = VoicePipeline(_broadcast, _voice_converse, _voice_conv_id)
     asyncio.create_task(_telemetry_loop())
+    scheduler.start()
+    if tools.canvas.configured():
+        asyncio.create_task(_initial_canvas_sync())
+
+
+async def _initial_canvas_sync() -> None:
+    try:
+        result = await tools.canvas.sync()
+        log.info("startup canvas sync: %s", result)
+        await _broadcast({"type": "activity", "text": "Canvas synced"})
+    except Exception:  # noqa: BLE001
+        log.exception("startup canvas sync failed")
 
 
 @app.get("/audit")
@@ -112,11 +125,19 @@ def tts_preview(text: str, voice: str | None = None):
 
 @app.get("/health")
 def health() -> dict:
+    from tools import canvas, comms
+
     return {
         "status": "ok",
         "local_model": config.LOCAL_MODEL,
         "gemini_model": config.GEMINI_MODEL,
         "gemini_calls_today": db.gemini_calls_today(),
+        "integrations": {
+            "canvas": canvas.configured(),
+            "discord": bool(comms._discord_token()),
+            "gmail": comms.gmail_configured(),
+        },
+        "canvas_url": config.CANVAS_BASE_URL,
     }
 
 

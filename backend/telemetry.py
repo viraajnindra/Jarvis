@@ -65,5 +65,14 @@ async def snapshot() -> dict:
         "internet": _internet_up(),
         "study": None,    # Phase 8
         "lovable": None,  # Phase 8
-        "canvas": None,   # Phase 6
+        "canvas": _canvas_counts(),
     }
+
+
+def _canvas_counts() -> dict | None:
+    try:
+        from tools import canvas
+
+        return canvas.panel_counts()
+    except Exception:  # noqa: BLE001 - telemetry must never crash the loop
+        return None

@@ -50,7 +50,13 @@ function StatRow({
   );
 }
 
-export default function TelemetryPanel({ t }: { t: Telemetry | null }) {
+export default function TelemetryPanel({
+  t,
+  canvasUrl,
+}: {
+  t: Telemetry | null;
+  canvasUrl?: string;
+}) {
   return (
     <div className="flex flex-col gap-3 h-full">
       <div className="panel-title">SYSTEM TELEMETRY</div>
@@ -92,15 +98,25 @@ export default function TelemetryPanel({ t }: { t: Telemetry | null }) {
 
       <Panel title="CANVAS OVERVIEW">
         <div className="text-[11px] space-y-1">
-          {["Assignments Due Soon", "Ungraded Submissions", "New Announcements"].map((label) => (
+          {[
+            { label: "Assignments Due Soon", v: t?.canvas?.due_soon },
+            { label: "Ungraded Submissions", v: t?.canvas?.ungraded },
+            { label: "New Announcements", v: t?.canvas?.announcements },
+          ].map(({ label, v }) => (
             <div key={label} className="flex items-center gap-2">
               <CheckboxIcon size={14} className="text-cyan" />
-              <span className="text-text-dim">--</span>
+              <span className="text-cyan w-4">{v ?? "--"}</span>
               <span>{label}</span>
             </div>
           ))}
         </div>
-        <button className="mt-2 w-full border border-cyan-faint text-cyan text-[10px] tracking-[0.2em] py-1.5 hover:bg-cyan-faint flex items-center justify-center gap-1">
+        {!t?.canvas && (
+          <div className="text-text-dim text-[9px] mt-1">Not connected — add Canvas token</div>
+        )}
+        <button
+          onClick={() => canvasUrl && window.open(canvasUrl, "_blank")}
+          className="mt-2 w-full border border-cyan-faint text-cyan text-[10px] tracking-[0.2em] py-1.5 hover:bg-cyan-faint flex items-center justify-center gap-1"
+        >
           OPEN CANVAS <ExternalIcon size={11} />
         </button>
       </Panel>

@@ -15,7 +15,7 @@ export type ServerMsg =
       internet: boolean;
       study: unknown;
       lovable: unknown;
-      canvas: unknown;
+      canvas: { due_soon: number; ungraded: number; announcements: number } | null;
     }
   | { type: "approval_request"; id: string; action: string; target: string; detail?: string }
   | { type: "approval_expired"; id: string }
