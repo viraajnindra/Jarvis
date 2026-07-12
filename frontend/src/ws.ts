@@ -21,6 +21,8 @@ export type ServerMsg =
   | { type: "approval_expired"; id: string }
   | { type: "activity"; text: string }
   | { type: "memory_list"; facts: Fact[] }
+  | { type: "voice_state"; state: string }
+  | { type: "voice_transcript"; text: string }
   | { type: "error"; message: string };
 
 export type Fact = {
@@ -104,6 +106,15 @@ class JarvisSocket {
   }
   memoryAdd(content: string) {
     this.send({ type: "memory_add", content });
+  }
+  voiceStart() {
+    this.send({ type: "voice_start" });
+  }
+  voiceStop() {
+    this.send({ type: "voice_stop" });
+  }
+  pushToTalk() {
+    this.send({ type: "push_to_talk" });
   }
 }
 

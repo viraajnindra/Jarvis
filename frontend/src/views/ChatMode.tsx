@@ -33,6 +33,7 @@ export default function ChatMode({
   onSend,
   draft,
   setDraft,
+  onVoiceMode,
 }: {
   messages: ChatMessage[];
   streaming: string;
@@ -41,6 +42,7 @@ export default function ChatMode({
   onSend: (text: string) => void;
   draft: string;
   setDraft: (v: string) => void;
+  onVoiceMode: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -144,8 +146,9 @@ export default function ChatMode({
         </div>
         <div className="flex items-center gap-3 mt-2">
           <button
+            onClick={onVoiceMode}
             className="flex items-center gap-2 border border-cyan-faint px-3 py-1.5 text-[10px] tracking-[0.2em] text-cyan hover:bg-cyan-faint"
-            title="Voice mode arrives in Phase 5"
+            title="Switch to voice mode"
           >
             <MicIcon size={13} /> VOICE MODE
           </button>

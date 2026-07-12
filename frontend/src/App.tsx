@@ -7,6 +7,7 @@ import ActivityFeed, { ActivityItem } from "./components/ActivityFeed";
 import StatusBar from "./components/StatusBar";
 import MemoryPane from "./components/MemoryPane";
 import ChatMode, { ChatMessage } from "./views/ChatMode";
+import VoiceMode from "./views/VoiceMode";
 import { jarvis, Fact, ServerMsg, Telemetry } from "./ws";
 
 const LOCAL_MODEL = "qwen3.5:9b";
@@ -28,6 +29,10 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [facts, setFacts] = useState<Fact[]>([]);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [mode, setMode] = useState<"chat" | "voice">("chat");
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceState, setVoiceState] = useState("IDLE");
+  const [transcript, setTranscript] = useState("");
   const convRef = useRef<string | undefined>(
     localStorage.getItem("jarvis.conversation") ?? undefined,
   );
@@ -70,6 +75,13 @@ export default function App() {
         case "memory_list":
           setFacts(msg.facts);
           break;
+        case "voice_state":
+          setVoiceState(msg.state);
+          break;
+        case "voice_transcript":
+          setTranscript(msg.text);
+          setMessages((m) => [...m, { role: "user", content: msg.text, time: now() }]);
+          break;
         case "error":
           setActivity((a) => [{ text: `Error: ${msg.message}`, time: now() }, ...a]);
           break;
@@ -81,6 +93,16 @@ export default function App() {
   const send = (text: string) => {
     setMessages((m) => [...m, { role: "user", content: text, time: now() }]);
     jarvis.sendUserMsg(text, convRef.current);
+  };
+
+  const toggleVoice = () => {
+    if (voiceActive) {
+      jarvis.voiceStop();
+      setVoiceActive(false);
+    } else {
+      jarvis.voiceStart();
+      setVoiceActive(true);
+    }
   };
 
   const respondApproval = (id: string, approved: boolean) => {
@@ -98,15 +120,26 @@ export default function App() {
       {memoryOpen && <MemoryPane facts={facts} onClose={() => setMemoryOpen(false)} />}
       <main className="flex-1 grid grid-cols-[25%_1fr_27%] gap-3 p-3 min-h-0">
         <TelemetryPanel t={telemetry} />
-        <ChatMode
-          messages={messages}
-          streaming={streaming}
-          state={state}
-          model={model}
-          onSend={send}
-          draft={draft}
-          setDraft={setDraft}
-        />
+        {mode === "chat" ? (
+          <ChatMode
+            messages={messages}
+            streaming={streaming}
+            state={state}
+            model={model}
+            onSend={send}
+            draft={draft}
+            setDraft={setDraft}
+            onVoiceMode={() => setMode("voice")}
+          />
+        ) : (
+          <VoiceMode
+            active={voiceActive}
+            voiceState={voiceState}
+            transcript={transcript}
+            onToggle={toggleVoice}
+            onChatMode={() => setMode("chat")}
+          />
+        )}
         <div className="flex flex-col gap-3 min-h-0">
           <QuickTools onPick={(p) => setDraft(p)} />
           {pending && <PendingActionCard action={pending} onRespond={respondApproval} />}
@@ -117,7 +150,7 @@ export default function App() {
         localModel={LOCAL_MODEL}
         memoryOnline={connected}
         cloudModel={CLOUD_MODEL}
-        voiceMode={false}
+        voiceMode={mode === "voice"}
       />
     </div>
   );

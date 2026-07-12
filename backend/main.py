@@ -30,6 +30,7 @@ import db
 import memory
 import telemetry
 import tools
+from voice import VoicePipeline, list_voices, synth_wav_bytes
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("jarvis.main")
@@ -38,6 +39,18 @@ app = FastAPI(title="jarvis-backend")
 
 _clients: set[WebSocket] = set()
 TELEMETRY_INTERVAL_S = 3
+
+# Voice conversation id — the voice pipeline shares one rolling conversation.
+_voice_conv: dict[str, str] = {}
+
+
+def _voice_conv_id() -> str:
+    if "id" not in _voice_conv or not db.conversation_exists(_voice_conv["id"]):
+        _voice_conv["id"] = db.create_conversation("Voice session")
+    return _voice_conv["id"]
+
+
+voice_pipeline: VoicePipeline | None = None
 
 
 async def _telemetry_loop() -> None:
@@ -61,19 +74,40 @@ async def _broadcast(payload: dict) -> None:
             _clients.discard(ws)
 
 
+async def _voice_converse(conv_id: str, text: str):
+    """Voice entrypoint into converse: persist the spoken turn, then delegate."""
+    db.add_message(conv_id, "user", text)
+    async for event in converse(conv_id, text):
+        yield event
+
+
 @app.on_event("startup")
 async def _startup() -> None:
+    global voice_pipeline
     db.init()
     approval.init()
     approval.set_broadcaster(_broadcast)
     tools.load_all()
     log.info("tools registered: %s", sorted(tools.REGISTRY))
+    voice_pipeline = VoicePipeline(_broadcast, _voice_converse, _voice_conv_id)
     asyncio.create_task(_telemetry_loop())
 
 
 @app.get("/audit")
 def audit_log(limit: int = 50) -> dict:
     return {"entries": approval.audit_rows(limit)}
+
+
+@app.get("/voices")
+def voices() -> dict:
+    return {"voices": list_voices(), "current": config.TTS_VOICE}
+
+
+@app.get("/tts_preview")
+def tts_preview(text: str, voice: str | None = None):
+    from fastapi import Response
+
+    return Response(synth_wav_bytes(text, voice), media_type="audio/wav")
 
 
 @app.get("/health")
@@ -90,33 +124,38 @@ REMEMBER_RE = re.compile(r"^(?:jarvis[,!]?\s+)?remember\s+(?:that\s+)?(.+)$", re
 FORGET_RE = re.compile(r"^(?:jarvis[,!]?\s+)?forget\s+(?:about\s+|that\s+)?(.+)$", re.I | re.S)
 
 
-async def _handle_memory_command(ws: WebSocket, conv_id: str, text: str) -> bool:
-    """Explicit remember/forget commands bypass the LLM. Returns True if handled."""
+async def _memory_command_reply(text: str) -> str | None:
+    """Explicit remember/forget commands bypass the LLM. Returns reply or None."""
     if m := REMEMBER_RE.match(text.strip()):
         fact_id = await memory.add_fact(m.group(1).strip(), source="explicit")
-        reply = (
+        return (
             "Noted, Boss. I'll remember that."
             if fact_id is not None
             else "Already in my memory core, Boss."
         )
-    elif m := FORGET_RE.match(text.strip()):
+    if m := FORGET_RE.match(text.strip()):
         deleted = await memory.forget(m.group(1).strip())
-        reply = (
+        return (
             f"Forgotten: “{deleted['content']}”"
             if deleted
             else "Nothing in my memory core matches that, Boss."
         )
-    else:
-        return False
-    db.add_message(conv_id, "assistant", reply)
-    await ws.send_json({"type": "assistant_done", "content": reply})
-    await ws.send_json({"type": "state", "state": "idle", "conversation_id": conv_id})
-    return True
+    return None
 
 
-async def _run_and_stream(ws: WebSocket, conv_id: str, user_text: str) -> None:
-    if await _handle_memory_command(ws, conv_id, user_text):
+async def converse(conv_id: str, user_text: str):
+    """Shared conversation generator used by both text (WS) and voice paths.
+
+    Handles memory commands, recall injection, the agent turn, persistence, and
+    the background post-turn pass. Yields protocol events; the caller decides how
+    to deliver them (per-socket for text, broadcast + TTS for voice).
+    """
+    reply = await _memory_command_reply(user_text)
+    if reply is not None:
+        db.add_message(conv_id, "assistant", reply)
+        yield {"done": True, "content": reply}
         return
+
     history = db.get_messages(conv_id)
     memory_block = await memory.recall_block(user_text)
     if len(history) <= 1 and (prev := memory.latest_summary()):
@@ -126,6 +165,16 @@ async def _run_and_stream(ws: WebSocket, conv_id: str, user_text: str) -> None:
     ] + history
     final = ""
     async for event in agent.run_turn(messages):
+        if event.get("done"):
+            final = event["content"]
+        yield event
+    db.add_message(conv_id, "assistant", final)
+    asyncio.create_task(_post_turn(conv_id, user_text, final))
+
+
+async def _run_and_stream(ws: WebSocket, conv_id: str, user_text: str) -> None:
+    final = ""
+    async for event in converse(conv_id, user_text):
         if "state" in event:
             await ws.send_json(
                 {"type": "state", "state": event["state"], "model": event["model"],
@@ -142,10 +191,8 @@ async def _run_and_stream(ws: WebSocket, conv_id: str, user_text: str) -> None:
             await ws.send_json({"type": "tool_result", **event["tool_result"]})
         elif event.get("done"):
             final = event["content"]
-    db.add_message(conv_id, "assistant", final)
     await ws.send_json({"type": "assistant_done", "content": final})
     await ws.send_json({"type": "state", "state": "idle", "conversation_id": conv_id})
-    asyncio.create_task(_post_turn(conv_id, user_text, final))
 
 
 async def _post_turn(conv_id: str, user_text: str, assistant_text: str) -> None:
@@ -176,6 +223,19 @@ async def ws_endpoint(ws: WebSocket) -> None:
             mtype = msg.get("type")
             if mtype == "approval_response":
                 approval.resolve(str(msg.get("id", "")), bool(msg.get("approved")))
+                continue
+
+            if mtype == "voice_start":
+                if voice_pipeline:
+                    await voice_pipeline.start()
+                continue
+            if mtype == "voice_stop":
+                if voice_pipeline:
+                    await voice_pipeline.stop()
+                continue
+            if mtype == "push_to_talk":
+                if voice_pipeline:
+                    voice_pipeline.push_to_talk()
                 continue
 
             if mtype == "cancel":

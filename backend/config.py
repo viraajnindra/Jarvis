@@ -29,3 +29,15 @@ ROUTER_LOCAL_TOKEN_LIMIT = int(os.getenv("JARVIS_ROUTER_TOKEN_LIMIT", "8000"))
 AGENT_MAX_ITERATIONS = int(os.getenv("JARVIS_AGENT_MAX_ITERATIONS", "10"))
 
 KEYRING_SERVICE = "jarvis"
+
+# Voice pipeline
+VOICES_DIR = DATA_DIR / "voices"
+TTS_VOICE = os.getenv("JARVIS_TTS_VOICE", "en_US-ryan-high")  # bake-off winner; swap freely
+WAKEWORD = "hey_jarvis_v0.1"
+WAKEWORD_THRESHOLD = float(os.getenv("JARVIS_WAKEWORD_THRESHOLD", "0.5"))
+STT_MODEL = os.getenv("JARVIS_STT_MODEL", "small")
+SAMPLE_RATE = 16000
+FRAME_SAMPLES = 1280  # 80 ms at 16 kHz — openWakeWord's expected frame
+VAD_THRESHOLD = float(os.getenv("JARVIS_VAD_THRESHOLD", "0.5"))
+VAD_SILENCE_MS = int(os.getenv("JARVIS_VAD_SILENCE_MS", "800"))  # end-of-speech hangover
+MAX_UTTERANCE_MS = int(os.getenv("JARVIS_MAX_UTTERANCE_MS", "15000"))
