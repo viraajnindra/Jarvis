@@ -16,6 +16,9 @@ frontend/node_modules/
 frontend/dist/
 frontend/src-tauri/target/
 
+# verify script state
+backend/scripts/.verify_phase1_conv
+
 # misc
 .DS_Store
 Thumbs.db
