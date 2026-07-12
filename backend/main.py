@@ -25,16 +25,34 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import agent
 import config
 import db
+import telemetry
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("jarvis.main")
 
 app = FastAPI(title="jarvis-backend")
 
+_clients: set[WebSocket] = set()
+TELEMETRY_INTERVAL_S = 3
+
+
+async def _telemetry_loop() -> None:
+    while True:
+        if _clients:
+            snap = await telemetry.snapshot()
+            payload = {"type": "telemetry", **snap}
+            for ws in list(_clients):
+                try:
+                    await ws.send_json(payload)
+                except Exception:  # noqa: BLE001 - dead socket, drop it
+                    _clients.discard(ws)
+        await asyncio.sleep(TELEMETRY_INTERVAL_S)
+
 
 @app.on_event("startup")
-def _init_db() -> None:
+async def _startup() -> None:
     db.init()
+    asyncio.create_task(_telemetry_loop())
 
 
 @app.get("/health")
@@ -73,6 +91,7 @@ async def _run_and_stream(ws: WebSocket, conv_id: str) -> None:
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await ws.accept()
+    _clients.add(ws)
     task: asyncio.Task | None = None
     try:
         while True:
@@ -112,6 +131,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
     except WebSocketDisconnect:
         if task and not task.done():
             task.cancel()
+    finally:
+        _clients.discard(ws)
 
 
 if __name__ == "__main__":

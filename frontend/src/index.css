@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #050a12;
+  --color-panel: #081020;
+  --color-panel-2: #0a1526;
+  --color-cyan: #35c7e8;
+  --color-cyan-dim: #35c7e855;
+  --color-cyan-faint: #35c7e822;
+  --color-alert: #e83545;
+  --color-alert-dim: #e8354555;
+  --color-ok: #3ee87c;
+  --color-text: #c9e6f2;
+  --color-text-dim: #6b93a8;
+  --font-mono: "Cascadia Mono", Consolas, "JetBrains Mono", monospace;
+  --font-display: Georgia, "Times New Roman", serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  user-select: none;
+}
+
+.panel-title {
+  @apply text-cyan text-[11px] tracking-[0.2em] uppercase;
+}
+
+/* HUD panel frame with notched corner */
+.hud-panel {
+  position: relative;
+  background: var(--color-panel);
+  border: 1px solid var(--color-cyan-faint);
+  clip-path: polygon(
+    0 0,
+    calc(100% - 14px) 0,
+    100% 14px,
+    100% 100%,
+    14px 100%,
+    0 calc(100% - 14px)
+  );
+}
+
+.glow-cyan {
+  filter: drop-shadow(0 0 6px var(--color-cyan-dim));
+}
+
+.text-glow {
+  text-shadow: 0 0 8px var(--color-cyan-dim);
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.pulse-soft {
+  animation: pulse-soft 2.2s ease-in-out infinite;
+}
+
+@keyframes reactor-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.reactor-spin {
+  animation: reactor-spin 24s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+.wave-bar {
+  animation: wave 1.4s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-soft,
+  .reactor-spin,
+  .wave-bar {
+    animation: none;
+  }
+}
+
+/* chat scroll area */
+.chat-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-cyan-faint) transparent;
+  user-select: text;
+}
+
+.chat-scroll :is(p, ul, ol) {
+  margin: 0.35em 0;
+}
+.chat-scroll ul {
+  list-style: none;
+  padding-left: 1em;
+}
+.chat-scroll ul li::before {
+  content: "▸ ";
+  color: var(--color-cyan);
+}
+.chat-scroll code {
+  background: var(--color-panel-2);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.chat-scroll pre {
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-cyan-faint);
+  padding: 8px;
+  overflow-x: auto;
+}

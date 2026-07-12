@@ -1,0 +1,86 @@
+// WebSocket client for the Jarvis backend. Singleton with auto-reconnect.
+
+export type ServerMsg =
+  | { type: "state"; state: string; model?: string; conversation_id?: string }
+  | { type: "assistant_token"; content: string }
+  | { type: "assistant_done"; content: string }
+  | { type: "tool_call"; name: string; arguments: unknown }
+  | { type: "tool_result"; name: string; result: unknown }
+  | {
+      type: "telemetry";
+      cpu_pct: number;
+      ram_pct: number;
+      gpu: { name: string; util_pct: number; vram_used_gb: number; vram_total_gb: number } | null;
+      model_online: boolean;
+      internet: boolean;
+      study: unknown;
+      lovable: unknown;
+      canvas: unknown;
+    }
+  | { type: "approval_request"; id: string; action: string; target: string; detail?: string }
+  | { type: "error"; message: string };
+
+export type Telemetry = Extract<ServerMsg, { type: "telemetry" }>;
+
+const WS_URL = "ws://127.0.0.1:8735/ws";
+
+type Listener = (msg: ServerMsg) => void;
+
+class JarvisSocket {
+  private ws: WebSocket | null = null;
+  private listeners = new Set<Listener>();
+  private retryMs = 1000;
+  connected = false;
+
+  connect() {
+    if (this.ws && this.ws.readyState <= WebSocket.OPEN) return;
+    this.ws = new WebSocket(WS_URL);
+    this.ws.onopen = () => {
+      this.connected = true;
+      this.retryMs = 1000;
+      this.emit({ type: "state", state: "connected" });
+    };
+    this.ws.onmessage = (ev) => {
+      try {
+        this.emit(JSON.parse(ev.data));
+      } catch {
+        // malformed frame, ignore
+      }
+    };
+    this.ws.onclose = () => {
+      this.connected = false;
+      this.emit({ type: "state", state: "disconnected" });
+      setTimeout(() => this.connect(), this.retryMs);
+      this.retryMs = Math.min(this.retryMs * 2, 15000);
+    };
+    this.ws.onerror = () => this.ws?.close();
+  }
+
+  private emit(msg: ServerMsg) {
+    this.listeners.forEach((fn) => fn(msg));
+  }
+
+  subscribe(fn: Listener): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private send(obj: object) {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(obj));
+  }
+
+  sendUserMsg(content: string, conversationId?: string) {
+    this.send({ type: "user_msg", content, conversation_id: conversationId });
+  }
+  cancel() {
+    this.send({ type: "cancel" });
+  }
+  regenerate(conversationId: string) {
+    this.send({ type: "regenerate", conversation_id: conversationId });
+  }
+  approvalResponse(id: string, approved: boolean) {
+    this.send({ type: "approval_response", id, approved });
+  }
+}
+
+export const jarvis = new JarvisSocket();

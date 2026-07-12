@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "frontend",
+  "productName": "JARVIS",
   "version": "0.1.0",
-  "identifier": "com.ameet.frontend",
+  "identifier": "com.ameet.jarvis",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "frontend",
-        "width": 800,
-        "height": 600
+        "title": "J.A.R.V.I.S.",
+        "width": 1536,
+        "height": 1000,
+        "minWidth": 1200,
+        "minHeight": 800,
+        "center": true
       }
     ],
     "security": {

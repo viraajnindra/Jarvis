@@ -1,51 +1,110 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { useEffect, useRef, useState } from "react";
+import Header from "./components/Header";
+import TelemetryPanel from "./components/TelemetryPanel";
+import QuickTools from "./components/QuickTools";
+import PendingActionCard, { PendingAction } from "./components/PendingActionCard";
+import ActivityFeed, { ActivityItem } from "./components/ActivityFeed";
+import StatusBar from "./components/StatusBar";
+import ChatMode, { ChatMessage } from "./views/ChatMode";
+import { jarvis, ServerMsg, Telemetry } from "./ws";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+const LOCAL_MODEL = "qwen3.5:9b";
+const CLOUD_MODEL = "Gemini 2.5 Flash";
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
-  return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
-  );
+function now() {
+  return new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
-export default App;
+export default function App() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [streaming, setStreaming] = useState("");
+  const [state, setState] = useState("idle");
+  const [model, setModel] = useState(LOCAL_MODEL);
+  const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
+  const [pending, setPending] = useState<PendingAction | null>(null);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [connected, setConnected] = useState(false);
+  const [draft, setDraft] = useState("");
+  const convRef = useRef<string | undefined>(
+    localStorage.getItem("jarvis.conversation") ?? undefined,
+  );
+
+  useEffect(() => {
+    jarvis.connect();
+    const unsub = jarvis.subscribe((msg: ServerMsg) => {
+      switch (msg.type) {
+        case "state":
+          if (msg.state === "connected") setConnected(true);
+          else if (msg.state === "disconnected") setConnected(false);
+          else setState(msg.state);
+          if (msg.model) setModel(msg.model);
+          if (msg.conversation_id) {
+            convRef.current = msg.conversation_id;
+            localStorage.setItem("jarvis.conversation", msg.conversation_id);
+          }
+          break;
+        case "assistant_token":
+          setStreaming((s) => s + msg.content);
+          break;
+        case "assistant_done":
+          setStreaming("");
+          setMessages((m) => [...m, { role: "assistant", content: msg.content, time: now() }]);
+          setActivity((a) => [{ text: "Reply generated", time: now() }, ...a]);
+          break;
+        case "telemetry":
+          setTelemetry(msg);
+          break;
+        case "approval_request":
+          setPending({ id: msg.id, action: msg.action, target: msg.target, detail: msg.detail });
+          break;
+        case "error":
+          setActivity((a) => [{ text: `Error: ${msg.message}`, time: now() }, ...a]);
+          break;
+      }
+    });
+    return unsub;
+  }, []);
+
+  const send = (text: string) => {
+    setMessages((m) => [...m, { role: "user", content: text, time: now() }]);
+    jarvis.sendUserMsg(text, convRef.current);
+  };
+
+  const respondApproval = (id: string, approved: boolean) => {
+    jarvis.approvalResponse(id, approved);
+    setActivity((a) => [
+      { text: `Action ${approved ? "confirmed" : "cancelled"}`, time: now() },
+      ...a,
+    ]);
+    setPending(null);
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      <Header />
+      <main className="flex-1 grid grid-cols-[25%_1fr_27%] gap-3 p-3 min-h-0">
+        <TelemetryPanel t={telemetry} />
+        <ChatMode
+          messages={messages}
+          streaming={streaming}
+          state={state}
+          model={model}
+          onSend={send}
+          draft={draft}
+          setDraft={setDraft}
+        />
+        <div className="flex flex-col gap-3 min-h-0">
+          <QuickTools onPick={(p) => setDraft(p)} />
+          {pending && <PendingActionCard action={pending} onRespond={respondApproval} />}
+          <ActivityFeed items={activity} />
+        </div>
+      </main>
+      <StatusBar
+        localModel={LOCAL_MODEL}
+        memoryOnline={connected}
+        cloudModel={CLOUD_MODEL}
+        voiceMode={false}
+      />
+    </div>
+  );
+}
