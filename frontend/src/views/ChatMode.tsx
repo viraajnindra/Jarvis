@@ -65,7 +65,7 @@ export default function ChatMode({
   };
 
   return (
-    <div className="hud-panel h-full flex flex-col">
+    <div className="hud-panel h-full min-h-0 flex flex-col">
       <div className="flex items-center gap-2 px-4 py-2 border-b border-cyan-faint">
         <span className="panel-title">ACTIVE SESSION</span>
         <span
@@ -77,7 +77,7 @@ export default function ChatMode({
         </span>
       </div>
 
-      <div ref={scrollRef} className="chat-scroll flex-1 overflow-y-auto px-4 py-3 space-y-3">
+      <div ref={scrollRef} className="chat-scroll flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3">
         {messages.length === 0 && !streaming && (
           <div className="flex items-center gap-4 mt-6">
             <ArcReactor size={72} />
