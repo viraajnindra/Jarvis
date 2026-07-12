@@ -14,6 +14,7 @@ import queue
 import re
 import threading
 import time
+from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 import numpy as np
@@ -40,6 +41,7 @@ class VoicePipeline:
         self._frames: queue.Queue = queue.Queue()
         self._stream = None
         self._task: asyncio.Task | None = None
+        self._respond_task: asyncio.Task | None = None
         self._running = False
         self._speaking = False
         self._interrupt = threading.Event()
@@ -84,8 +86,9 @@ class VoicePipeline:
             self._stream.stop()
             self._stream.close()
             self._stream = None
-        if self._task:
-            self._task.cancel()
+        for task in (self._respond_task, self._task):
+            if task and not task.done():
+                task.cancel()
         await self._set_state("IDLE")
 
     def push_to_talk(self) -> None:
@@ -118,34 +121,52 @@ class VoicePipeline:
                 await asyncio.sleep(0.01)
 
     # ---- main loop ----
+    # Always consuming frames, even while a response is in flight — so the
+    # wakeword or push-to-talk can interrupt THINKING/SPEAKING at any moment.
     async def _run(self) -> None:
+        prebuffer: deque[np.ndarray] = deque(maxlen=config.PREBUFFER_FRAMES)
         try:
             while self._running:
                 frame = await self._next_frame()
-                if self._ptt.is_set():
-                    self._ptt.clear()
-                    await self._handle_utterance()
+                prebuffer.append(frame)
+                fired = self._ptt.is_set()
+                if not fired:
+                    score = self._oww.predict(frame)[config.WAKEWORD]
+                    fired = score >= config.WAKEWORD_THRESHOLD
+                    if fired:
+                        log.info("wakeword (%.2f)", score)
+                if not fired:
                     continue
-                score = self._oww.predict(frame)[config.WAKEWORD]
-                if score >= config.WAKEWORD_THRESHOLD:
-                    log.info("wakeword (%.2f)", score)
-                    self._drain()
-                    await self._handle_utterance()
+                self._ptt.clear()
+                self._reset_wakeword()
+                await self._cancel_response()  # barge-in: kill any in-flight reply
+                await self._handle_utterance(list(prebuffer))
+                prebuffer.clear()
         except asyncio.CancelledError:
             pass
         except Exception:  # noqa: BLE001
             log.exception("voice loop crashed")
             await self._set_state("ERROR")
 
-    def _drain(self) -> None:
-        while not self._frames.empty():
-            try:
-                self._frames.get_nowait()
-            except queue.Empty:
-                break
+    def _reset_wakeword(self) -> None:
+        """Clear the detector's rolling buffer so one utterance can't re-trigger."""
+        reset = getattr(self._oww, "reset", None)
+        if callable(reset):
+            reset()
 
-    async def _handle_utterance(self) -> None:
-        audio = await self._record_until_silence()
+    async def _cancel_response(self) -> None:
+        self._interrupt.set()  # stops any playback immediately
+        task = self._respond_task
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+
+    async def _handle_utterance(self, prebuffer: list[np.ndarray]) -> None:
+        await self._set_state("LISTENING")
+        audio = await self._record_until_silence(prebuffer)
         if audio.size < config.SAMPLE_RATE // 2:  # < 0.5 s, likely noise
             await self._set_state("LISTENING")
             return
@@ -156,13 +177,22 @@ class VoicePipeline:
             await self._set_state("LISTENING")
             return
         await self._emit({"type": "voice_transcript", "text": text})
-        await self._respond(text)
-        if self._running:
-            await self._set_state("LISTENING")
+        # Respond in a background task so the main loop keeps watching for barge-in.
+        self._respond_task = asyncio.create_task(self._respond_and_reset(text))
 
-    async def _record_until_silence(self) -> np.ndarray:
-        chunks: list[np.ndarray] = []
+    async def _respond_and_reset(self, text: str) -> None:
+        try:
+            await self._respond(text)
+        finally:
+            if self._running:
+                await self._set_state("LISTENING")
+
+    async def _record_until_silence(self, prebuffer: list[np.ndarray]) -> np.ndarray:
+        # The pre-buffer holds ~1s of audio from BEFORE the wakeword fired — words
+        # spoken in the same breath as "Hey Jarvis" live there, never discard them.
+        chunks: list[np.ndarray] = list(prebuffer)
         silence_ms = 0
+        speech_seen = False
         started = time.monotonic()
         self._vad.reset_states()
         while self._running:
@@ -171,12 +201,18 @@ class VoicePipeline:
             speech_prob = self._vad.predict(frame)
             frame_ms = 1000 * len(frame) / config.SAMPLE_RATE
             if speech_prob >= config.VAD_THRESHOLD:
+                speech_seen = True
                 silence_ms = 0
             else:
                 silence_ms += frame_ms
-            if silence_ms >= config.VAD_SILENCE_MS and len(chunks) > 5:
+            elapsed_ms = (time.monotonic() - started) * 1000
+            # End only after speech was actually heard, then went quiet.
+            if speech_seen and silence_ms >= config.VAD_SILENCE_MS:
                 break
-            if (time.monotonic() - started) * 1000 > config.MAX_UTTERANCE_MS:
+            # No speech at all after the wakeword: give up quietly.
+            if not speech_seen and elapsed_ms > config.VAD_START_TIMEOUT_MS:
+                return np.array([], dtype=np.int16)
+            if elapsed_ms > config.MAX_UTTERANCE_MS:
                 break
         return np.concatenate(chunks) if chunks else np.array([], dtype=np.int16)
 
@@ -224,9 +260,14 @@ class VoicePipeline:
         await self._set_state("SPEAKING")
         pcm, rate = await asyncio.to_thread(tts.synth_pcm, text)
         self._interrupt.clear()
-        await asyncio.to_thread(self._play_with_bargein, pcm, rate)
+        await asyncio.to_thread(self._play, pcm, rate)
+        # Cancelled mid-speech (barge-in): abort the rest of the reply cleanly.
+        if self._interrupt.is_set():
+            raise asyncio.CancelledError
 
-    def _play_with_bargein(self, pcm: np.ndarray, rate: int) -> None:
+    def _play(self, pcm: np.ndarray, rate: int) -> None:
+        # The main loop keeps consuming mic frames and will set _interrupt (and
+        # cancel this task) if the wakeword fires — here we just honor the flag.
         import sounddevice as sd
 
         self._speaking = True
@@ -236,25 +277,9 @@ class VoicePipeline:
                 for i in range(0, len(pcm), block):
                     if self._interrupt.is_set() or not self._running:
                         break
-                    # barge-in: scan live frames for the wakeword while speaking
-                    if self._wakeword_in_queue():
-                        log.info("barge-in")
-                        self._interrupt.set()
-                        break
                     out.write(pcm[i : i + block])
         finally:
             self._speaking = False
-
-    def _wakeword_in_queue(self) -> bool:
-        fired = False
-        while not self._frames.empty():
-            try:
-                frame = self._frames.get_nowait()
-            except queue.Empty:
-                break
-            if self._oww.predict(frame)[config.WAKEWORD] >= config.WAKEWORD_THRESHOLD:
-                fired = True
-        return fired
 
     async def _set_state(self, state: str) -> None:
         await self._emit({"type": "voice_state", "state": state})
