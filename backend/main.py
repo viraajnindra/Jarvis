@@ -24,10 +24,12 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 import agent
+import approval
 import config
 import db
 import memory
 import telemetry
+import tools
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("jarvis.main")
@@ -51,10 +53,27 @@ async def _telemetry_loop() -> None:
         await asyncio.sleep(TELEMETRY_INTERVAL_S)
 
 
+async def _broadcast(payload: dict) -> None:
+    for ws in list(_clients):
+        try:
+            await ws.send_json(payload)
+        except Exception:  # noqa: BLE001 - dead socket
+            _clients.discard(ws)
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     db.init()
+    approval.init()
+    approval.set_broadcaster(_broadcast)
+    tools.load_all()
+    log.info("tools registered: %s", sorted(tools.REGISTRY))
     asyncio.create_task(_telemetry_loop())
+
+
+@app.get("/audit")
+def audit_log(limit: int = 50) -> dict:
+    return {"entries": approval.audit_rows(limit)}
 
 
 @app.get("/health")
@@ -116,6 +135,9 @@ async def _run_and_stream(ws: WebSocket, conv_id: str, user_text: str) -> None:
             await ws.send_json({"type": "assistant_token", "content": event["assistant_token"]})
         elif "tool_call" in event:
             await ws.send_json({"type": "tool_call", **event["tool_call"]})
+            await _broadcast(
+                {"type": "activity", "text": f"Tool: {event['tool_call']['name']}"}
+            )
         elif "tool_result" in event:
             await ws.send_json({"type": "tool_result", **event["tool_result"]})
         elif event.get("done"):
@@ -152,6 +174,10 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 continue
 
             mtype = msg.get("type")
+            if mtype == "approval_response":
+                approval.resolve(str(msg.get("id", "")), bool(msg.get("approved")))
+                continue
+
             if mtype == "cancel":
                 if task and not task.done():
                     task.cancel()

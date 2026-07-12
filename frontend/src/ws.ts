@@ -18,6 +18,8 @@ export type ServerMsg =
       canvas: unknown;
     }
   | { type: "approval_request"; id: string; action: string; target: string; detail?: string }
+  | { type: "approval_expired"; id: string }
+  | { type: "activity"; text: string }
   | { type: "memory_list"; facts: Fact[] }
   | { type: "error"; message: string };
 

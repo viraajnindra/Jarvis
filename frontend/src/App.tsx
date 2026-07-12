@@ -60,6 +60,13 @@ export default function App() {
         case "approval_request":
           setPending({ id: msg.id, action: msg.action, target: msg.target, detail: msg.detail });
           break;
+        case "approval_expired":
+          setPending((p) => (p && p.id === msg.id ? null : p));
+          setActivity((a) => [{ text: "Approval timed out — cancelled", time: now() }, ...a]);
+          break;
+        case "activity":
+          setActivity((a) => [{ text: msg.text, time: now() }, ...a]);
+          break;
         case "memory_list":
           setFacts(msg.facts);
           break;
