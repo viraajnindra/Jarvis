@@ -20,7 +20,7 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 LOCAL_MODEL = os.getenv("JARVIS_LOCAL_MODEL", "qwen3.5:9b")
 EMBED_MODEL = os.getenv("JARVIS_EMBED_MODEL", "nomic-embed-text")
 
-GEMINI_MODEL = os.getenv("JARVIS_GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("JARVIS_GEMINI_MODEL", "gemini-3.5-flash")
 GEMINI_DAILY_LIMIT = int(os.getenv("JARVIS_GEMINI_DAILY_LIMIT", "1400"))  # stay under 1500
 
 # Rough token threshold above which input routes to Gemini (large-context tasks).

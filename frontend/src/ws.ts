@@ -18,7 +18,17 @@ export type ServerMsg =
       canvas: unknown;
     }
   | { type: "approval_request"; id: string; action: string; target: string; detail?: string }
+  | { type: "memory_list"; facts: Fact[] }
   | { type: "error"; message: string };
+
+export type Fact = {
+  id: number;
+  subject: string;
+  content: string;
+  source: "explicit" | "inferred" | "document";
+  confidence: number;
+  created_at: number;
+};
 
 export type Telemetry = Extract<ServerMsg, { type: "telemetry" }>;
 
@@ -80,6 +90,18 @@ class JarvisSocket {
   }
   approvalResponse(id: string, approved: boolean) {
     this.send({ type: "approval_response", id, approved });
+  }
+  memoryList() {
+    this.send({ type: "memory_list" });
+  }
+  memoryDelete(id: number) {
+    this.send({ type: "memory_delete", id });
+  }
+  memoryUpdate(id: number, content: string) {
+    this.send({ type: "memory_update", id, content });
+  }
+  memoryAdd(content: string) {
+    this.send({ type: "memory_add", content });
   }
 }
 

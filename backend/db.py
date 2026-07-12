@@ -1,17 +1,49 @@
-"""SQLite persistence: conversations, messages, Gemini call log."""
+"""SQLite persistence: conversations, messages, facts (+vector index), Gemini call log."""
 
 import sqlite3
 import time
 import uuid
 
+import sqlite_vec
+
 import config
 
-SCHEMA = """
+EMBED_DIM = 768  # nomic-embed-text
+
+SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL DEFAULT 'New conversation',
+    summary TEXT,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS facts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject TEXT NOT NULL,
+    content TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('explicit','inferred','document')),
+    confidence REAL NOT NULL DEFAULT 1.0,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_facts USING vec0(
+    fact_id INTEGER PRIMARY KEY,
+    embedding float[{EMBED_DIM}] distance_metric=cosine
+);
+CREATE TABLE IF NOT EXISTS documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    url TEXT,
+    content TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS metrics_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    metric TEXT NOT NULL,
+    value REAL NOT NULL,
+    meta TEXT,
+    created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,6 +64,9 @@ CREATE TABLE IF NOT EXISTS gemini_calls (
 def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.enable_load_extension(True)
+    sqlite_vec.load(conn)
+    conn.enable_load_extension(False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -40,6 +75,9 @@ def connect() -> sqlite3.Connection:
 def init() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(conversations)")}
+        if "summary" not in cols:
+            conn.execute("ALTER TABLE conversations ADD COLUMN summary TEXT")
 
 
 def create_conversation(title: str = "New conversation") -> str:

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import ArcReactor from "./ArcReactor";
-import { PowerIcon } from "./icons";
+import { DbIcon, PowerIcon } from "./icons";
 
-export default function Header() {
+export default function Header({ onOpenMemory }: { onOpenMemory?: () => void }) {
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -37,6 +37,13 @@ export default function Header() {
           {clock}
           <span className="text-xs ml-1">{ampm}</span>
         </div>
+        <button
+          className="text-cyan border border-cyan-faint rounded-full p-2 hover:bg-cyan-faint"
+          title="Memory core"
+          onClick={onOpenMemory}
+        >
+          <DbIcon size={18} />
+        </button>
         <button
           className="text-cyan border border-cyan-faint rounded-full p-2 hover:bg-cyan-faint"
           title="Power"

@@ -18,6 +18,7 @@ WS protocol (JSON, one object per frame):
 import asyncio
 import json
 import logging
+import re
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -25,6 +26,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import agent
 import config
 import db
+import memory
 import telemetry
 
 logging.basicConfig(level=logging.INFO)
@@ -65,9 +67,44 @@ def health() -> dict:
     }
 
 
-async def _run_and_stream(ws: WebSocket, conv_id: str) -> None:
+REMEMBER_RE = re.compile(r"^(?:jarvis[,!]?\s+)?remember\s+(?:that\s+)?(.+)$", re.I | re.S)
+FORGET_RE = re.compile(r"^(?:jarvis[,!]?\s+)?forget\s+(?:about\s+|that\s+)?(.+)$", re.I | re.S)
+
+
+async def _handle_memory_command(ws: WebSocket, conv_id: str, text: str) -> bool:
+    """Explicit remember/forget commands bypass the LLM. Returns True if handled."""
+    if m := REMEMBER_RE.match(text.strip()):
+        fact_id = await memory.add_fact(m.group(1).strip(), source="explicit")
+        reply = (
+            "Noted, Boss. I'll remember that."
+            if fact_id is not None
+            else "Already in my memory core, Boss."
+        )
+    elif m := FORGET_RE.match(text.strip()):
+        deleted = await memory.forget(m.group(1).strip())
+        reply = (
+            f"Forgotten: “{deleted['content']}”"
+            if deleted
+            else "Nothing in my memory core matches that, Boss."
+        )
+    else:
+        return False
+    db.add_message(conv_id, "assistant", reply)
+    await ws.send_json({"type": "assistant_done", "content": reply})
+    await ws.send_json({"type": "state", "state": "idle", "conversation_id": conv_id})
+    return True
+
+
+async def _run_and_stream(ws: WebSocket, conv_id: str, user_text: str) -> None:
+    if await _handle_memory_command(ws, conv_id, user_text):
+        return
     history = db.get_messages(conv_id)
-    messages = [{"role": "system", "content": agent.build_system_prompt()}] + history
+    memory_block = await memory.recall_block(user_text)
+    if len(history) <= 1 and (prev := memory.latest_summary()):
+        memory_block += f"\n\nLast session recap: {prev}"
+    messages = [
+        {"role": "system", "content": agent.build_system_prompt(memory_block.strip())}
+    ] + history
     final = ""
     async for event in agent.run_turn(messages):
         if "state" in event:
@@ -86,6 +123,18 @@ async def _run_and_stream(ws: WebSocket, conv_id: str) -> None:
     db.add_message(conv_id, "assistant", final)
     await ws.send_json({"type": "assistant_done", "content": final})
     await ws.send_json({"type": "state", "state": "idle", "conversation_id": conv_id})
+    asyncio.create_task(_post_turn(conv_id, user_text, final))
+
+
+async def _post_turn(conv_id: str, user_text: str, assistant_text: str) -> None:
+    """Background pass: extract durable facts, refresh session summary."""
+    try:
+        stored = await memory.extract_and_store(user_text, assistant_text)
+        if stored:
+            log.info("extracted %d fact(s): %s", len(stored), stored)
+        await memory.summarize_conversation(conv_id)
+    except Exception:  # noqa: BLE001
+        log.exception("post-turn memory pass failed")
 
 
 @app.websocket("/ws")
@@ -117,15 +166,31 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 conv_id = msg.get("conversation_id")
                 if not conv_id or not db.conversation_exists(conv_id):
                     conv_id = db.create_conversation()
-                db.add_message(conv_id, "user", msg.get("content", ""))
-                task = asyncio.create_task(_run_and_stream(ws, conv_id))
+                text = msg.get("content", "")
+                db.add_message(conv_id, "user", text)
+                task = asyncio.create_task(_run_and_stream(ws, conv_id, text))
             elif mtype == "regenerate":
                 conv_id = msg.get("conversation_id", "")
                 if not db.conversation_exists(conv_id):
                     await ws.send_json({"type": "error", "message": "unknown conversation"})
                     continue
                 db.delete_last_assistant_message(conv_id)
-                task = asyncio.create_task(_run_and_stream(ws, conv_id))
+                history = db.get_messages(conv_id)
+                last_user = next(
+                    (m["content"] for m in reversed(history) if m["role"] == "user"), ""
+                )
+                task = asyncio.create_task(_run_and_stream(ws, conv_id, last_user))
+            elif mtype == "memory_list":
+                await ws.send_json({"type": "memory_list", "facts": memory.list_facts()})
+            elif mtype == "memory_delete":
+                memory.delete_fact(int(msg["id"]))
+                await ws.send_json({"type": "memory_list", "facts": memory.list_facts()})
+            elif mtype == "memory_update":
+                await memory.update_fact(int(msg["id"]), msg["content"])
+                await ws.send_json({"type": "memory_list", "facts": memory.list_facts()})
+            elif mtype == "memory_add":
+                await memory.add_fact(msg["content"], source="explicit")
+                await ws.send_json({"type": "memory_list", "facts": memory.list_facts()})
             else:
                 await ws.send_json({"type": "error", "message": f"unknown type: {mtype}"})
     except WebSocketDisconnect:

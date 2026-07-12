@@ -71,7 +71,7 @@ def check_gemini() -> bool:
         print("NOT STORED (run scripts/store_gemini_key.py first)")
         return False
     r = httpx.post(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
         headers={"x-goog-api-key": key},
         json={"contents": [{"parts": [{"text": "Reply with exactly: CLOUD LINK OK"}]}]},
         timeout=60,

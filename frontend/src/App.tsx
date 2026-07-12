@@ -5,11 +5,12 @@ import QuickTools from "./components/QuickTools";
 import PendingActionCard, { PendingAction } from "./components/PendingActionCard";
 import ActivityFeed, { ActivityItem } from "./components/ActivityFeed";
 import StatusBar from "./components/StatusBar";
+import MemoryPane from "./components/MemoryPane";
 import ChatMode, { ChatMessage } from "./views/ChatMode";
-import { jarvis, ServerMsg, Telemetry } from "./ws";
+import { jarvis, Fact, ServerMsg, Telemetry } from "./ws";
 
 const LOCAL_MODEL = "qwen3.5:9b";
-const CLOUD_MODEL = "Gemini 2.5 Flash";
+const CLOUD_MODEL = "Gemini 3.5 Flash";
 
 function now() {
   return new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
@@ -25,6 +26,8 @@ export default function App() {
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [connected, setConnected] = useState(false);
   const [draft, setDraft] = useState("");
+  const [facts, setFacts] = useState<Fact[]>([]);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const convRef = useRef<string | undefined>(
     localStorage.getItem("jarvis.conversation") ?? undefined,
   );
@@ -57,6 +60,9 @@ export default function App() {
         case "approval_request":
           setPending({ id: msg.id, action: msg.action, target: msg.target, detail: msg.detail });
           break;
+        case "memory_list":
+          setFacts(msg.facts);
+          break;
         case "error":
           setActivity((a) => [{ text: `Error: ${msg.message}`, time: now() }, ...a]);
           break;
@@ -80,8 +86,9 @@ export default function App() {
   };
 
   return (
-    <div className="h-full flex flex-col">
-      <Header />
+    <div className="h-full flex flex-col relative">
+      <Header onOpenMemory={() => setMemoryOpen(true)} />
+      {memoryOpen && <MemoryPane facts={facts} onClose={() => setMemoryOpen(false)} />}
       <main className="flex-1 grid grid-cols-[25%_1fr_27%] gap-3 p-3 min-h-0">
         <TelemetryPanel t={telemetry} />
         <ChatMode
