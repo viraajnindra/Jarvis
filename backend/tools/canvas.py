@@ -139,6 +139,12 @@ async def sync() -> dict:
         anns = []
     log.info("canvas sync: %d courses, %d assignments, %d announcements",
              len(courses), n_assign, len(anns))
+    import events
+
+    events.emit(
+        "canvas.assignment.synced",
+        {"courses": len(courses), "assignments": n_assign, "announcements": len(anns)},
+    )
     return {"courses": len(courses), "assignments": n_assign, "announcements": len(anns)}
 
 

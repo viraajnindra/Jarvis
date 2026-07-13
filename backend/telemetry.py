@@ -63,10 +63,28 @@ async def snapshot() -> dict:
         "gpu": _gpu_stats(),
         "model_online": await _model_online(),
         "internet": _internet_up(),
-        "study": None,    # Phase 8
-        "lovable": None,  # Phase 8
+        "study": _study_stats(),
+        "lovable": _lovable_panel(),
         "canvas": _canvas_counts(),
     }
+
+
+def _study_stats() -> dict | None:
+    try:
+        from tools import study
+
+        return study.stats()
+    except Exception:  # noqa: BLE001 - telemetry must never crash the loop
+        return None
+
+
+def _lovable_panel() -> dict | None:
+    try:
+        import metrics
+
+        return metrics.lovable_panel()
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _canvas_counts() -> dict | None:

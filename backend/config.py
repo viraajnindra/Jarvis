@@ -35,6 +35,12 @@ KEYRING_SERVICE = "jarvis"
 CANVAS_BASE_URL = os.getenv("JARVIS_CANVAS_URL", "").rstrip("/")  # e.g. https://school.instructure.com
 CANVAS_SYNC_INTERVAL_S = int(os.getenv("JARVIS_CANVAS_SYNC_INTERVAL_S", "1800"))
 
+# Phase 8: metrics + proactive
+LOVABLE_URL = os.getenv("JARVIS_LOVABLE_URL", "")  # your Lovable dashboard; empty = dormant
+LOVABLE_POLL_INTERVAL_S = int(os.getenv("JARVIS_LOVABLE_POLL_INTERVAL_S", "21600"))  # 6h
+BRIEF_HOUR = int(os.getenv("JARVIS_BRIEF_HOUR", "8"))       # morning brief (local time)
+DUE_ALERT_HOUR = int(os.getenv("JARVIS_DUE_ALERT_HOUR", "18"))  # due-tomorrow check
+
 # Deep research
 REPORTS_DIR = DATA_DIR / "reports"
 RESEARCH_MAX_SOURCES = int(os.getenv("JARVIS_RESEARCH_MAX_SOURCES", "6"))

@@ -13,13 +13,22 @@ export type ServerMsg =
       gpu: { name: string; util_pct: number; vram_used_gb: number; vram_total_gb: number } | null;
       model_online: boolean;
       internet: boolean;
-      study: unknown;
-      lovable: unknown;
+      study: {
+        today_h: number;
+        week_h: number;
+        days: number[];
+        active: boolean;
+        active_since: number | null;
+        active_note: string | null;
+      } | null;
+      lovable: { apps: number | null; views: number | null; updated: number } | null;
       canvas: { due_soon: number; ungraded: number; announcements: number } | null;
     }
   | { type: "approval_request"; id: string; action: string; target: string; detail?: string }
   | { type: "approval_expired"; id: string }
   | { type: "activity"; text: string }
+  | { type: "notification"; title: string; body: string }
+  | { type: "event"; name: string; payload: Record<string, unknown> }
   | { type: "memory_list"; facts: Fact[] }
   | { type: "voice_state"; state: string }
   | { type: "voice_transcript"; text: string }
@@ -106,6 +115,12 @@ class JarvisSocket {
   }
   memoryAdd(content: string) {
     this.send({ type: "memory_add", content });
+  }
+  studyStart() {
+    this.send({ type: "study_start" });
+  }
+  studyStop() {
+    this.send({ type: "study_stop" });
   }
   voiceStart() {
     this.send({ type: "voice_start" });

@@ -7,8 +7,10 @@ def load_all() -> None:
     import tools.canvas  # noqa: F401
     import tools.comms  # noqa: F401
     import tools.research  # noqa: F401
+    import tools.study  # noqa: F401
     import tools.system  # noqa: F401
     import tools.video  # noqa: F401
     import tools.web  # noqa: F401
 
     tools.canvas.init()
+    tools.study.init()

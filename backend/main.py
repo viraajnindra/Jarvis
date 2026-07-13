@@ -27,7 +27,10 @@ import agent
 import approval
 import config
 import db
+import events
 import memory
+import metrics
+import proactive
 import scheduler
 import telemetry
 import tools
@@ -88,6 +91,8 @@ async def _startup() -> None:
     db.init()
     approval.init()
     approval.set_broadcaster(_broadcast)
+    events.init()
+    events.set_broadcaster(_broadcast)
     tools.load_all()
     log.info("tools registered: %s", sorted(tools.REGISTRY))
     voice_pipeline = VoicePipeline(_broadcast, _voice_converse, _voice_conv_id)
@@ -121,6 +126,29 @@ def tts_preview(text: str, voice: str | None = None):
     from fastapi import Response
 
     return Response(synth_wav_bytes(text, voice), media_type="audio/wav")
+
+
+@app.get("/events")
+def event_log(limit: int = 50, name: str | None = None) -> dict:
+    return {"events": events.recent(limit, name)}
+
+
+@app.get("/metrics/{metric}")
+def metric_series(metric: str, days: int = 30) -> dict:
+    return {"metric": metric, "points": metrics.series(metric, days)}
+
+
+@app.get("/study")
+def study_stats() -> dict:
+    from tools import study
+
+    return study.stats()
+
+
+@app.post("/brief/preview")
+async def brief_preview() -> dict:
+    """Manual trigger: compose + broadcast the morning brief now."""
+    return {"brief": await proactive.morning_brief()}
 
 
 @app.get("/health")
@@ -257,6 +285,18 @@ async def ws_endpoint(ws: WebSocket) -> None:
             if mtype == "push_to_talk":
                 if voice_pipeline:
                     voice_pipeline.push_to_talk()
+                continue
+
+            if mtype in ("study_start", "study_stop"):
+                result = await tools.execute_tool(mtype, {})
+                label = result.get("error") or (
+                    "Study session started"
+                    if mtype == "study_start"
+                    else f"Study session stopped ({result.get('hours', 0):g}h)"
+                )
+                await _broadcast({"type": "activity", "text": label})
+                snap = await telemetry.snapshot()
+                await _broadcast({"type": "telemetry", **snap})
                 continue
 
             if mtype == "cancel":

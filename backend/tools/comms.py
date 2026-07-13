@@ -92,6 +92,9 @@ async def discord_send(channel_id: str, text: str, channel_name: str = "") -> di
         )
         r.raise_for_status()
         msg = r.json()
+    import events
+
+    events.emit("message.sent", {"channel": "discord", "target": channel_name or channel_id})
     return {"sent": True, "message_id": msg["id"], "channel_id": channel_id}
 
 
@@ -148,4 +151,7 @@ def gmail_send(to: str, subject: str, body: str) -> dict:
     sent = service.users().messages().send(userId="me", body={"raw": raw}).execute()
     if not sent.get("id"):
         return {"error": "send failed: no message id returned"}
+    import events
+
+    events.emit("message.sent", {"channel": "gmail", "target": to})
     return {"sent": True, "message_id": sent["id"], "to": to}

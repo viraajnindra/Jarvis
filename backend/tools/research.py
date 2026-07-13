@@ -262,6 +262,13 @@ async def deep_research(question: str, max_sources: int | None = None) -> dict:
     )
     facts_stored = await _store_findings(question, report)
 
+    import events
+
+    events.emit(
+        "research.report.completed",
+        {"question": question, "path": path, "sources": len(sources)},
+    )
+
     return {
         "report_path": path,
         "sources_used": len(sources),

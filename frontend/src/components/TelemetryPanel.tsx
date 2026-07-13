@@ -1,11 +1,13 @@
 import Panel from "./Panel";
-import { Telemetry } from "../ws";
+import { Telemetry, jarvis } from "../ws";
 import { CpuIcon, RamIcon, GpuIcon, BrainIcon, GlobeIcon, CheckboxIcon, ExternalIcon } from "./icons";
 
-function Ring({ label }: { label: string }) {
-  // Study data arrives in Phase 8; render the ring with a placeholder center.
+const DAY_GOAL_H = 6; // ring fills at this many hours studied today
+
+function Ring({ label, fraction }: { label: string; fraction: number }) {
   const r = 34;
   const c = 2 * Math.PI * r;
+  const f = Math.max(0, Math.min(fraction, 1));
   return (
     <svg width="88" height="88" viewBox="0 0 88 88" className="glow-cyan">
       <circle cx="44" cy="44" r={r} fill="none" stroke="var(--color-cyan-faint)" strokeWidth="6" />
@@ -16,7 +18,7 @@ function Ring({ label }: { label: string }) {
         fill="none"
         stroke="var(--color-cyan)"
         strokeWidth="6"
-        strokeDasharray={`${c * 0.0} ${c}`}
+        strokeDasharray={`${c * f} ${c}`}
         strokeLinecap="round"
         transform="rotate(-90 44 44)"
       />
@@ -57,41 +59,68 @@ export default function TelemetryPanel({
   t: Telemetry | null;
   canvasUrl?: string;
 }) {
+  const s = t?.study ?? null;
   return (
     <div className="flex flex-col gap-3 h-full">
       <div className="panel-title">SYSTEM TELEMETRY</div>
 
       <Panel title="STUDY TRACKER">
         <div className="flex items-center gap-3">
-          <Ring label="--" />
+          <Ring
+            label={s ? s.today_h.toFixed(1) : "--"}
+            fraction={s ? s.today_h / DAY_GOAL_H : 0}
+          />
           <div className="text-[11px] space-y-2">
             <div>
               <div className="text-text-dim tracking-wider">TODAY</div>
-              <div className="text-cyan">-- hrs</div>
+              <div className="text-cyan">{s ? `${s.today_h.toFixed(1)} hrs` : "-- hrs"}</div>
             </div>
             <div>
               <div className="text-text-dim tracking-wider">WEEK</div>
-              <div className="text-cyan">-- hrs</div>
+              <div className="text-cyan">{s ? `${s.week_h.toFixed(1)} hrs` : "-- hrs"}</div>
             </div>
           </div>
         </div>
-        <div className="flex justify-between text-[9px] text-text-dim mt-2 px-1 tracking-widest">
-          {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
-            <span key={i}>{d}</span>
+        <div className="flex justify-between items-end mt-2 px-1 h-8">
+          {(s?.days ?? Array(7).fill(0)).map((h, i) => (
+            <div key={i} className="flex flex-col items-center gap-0.5 w-4">
+              <div
+                className="w-1.5"
+                style={{
+                  height: `${Math.min(h / DAY_GOAL_H, 1) * 20}px`,
+                  background: h > 0 ? "var(--color-cyan)" : "var(--color-cyan-faint)",
+                  minHeight: "2px",
+                }}
+              />
+              <span className="text-[9px] text-text-dim tracking-widest">
+                {["M", "T", "W", "T", "F", "S", "S"][i]}
+              </span>
+            </div>
           ))}
         </div>
+        <button
+          onClick={() => (s?.active ? jarvis.studyStop() : jarvis.studyStart())}
+          className="mt-2 w-full border border-cyan-faint text-[10px] tracking-[0.2em] py-1.5 hover:bg-cyan-faint"
+          style={{ color: s?.active ? "var(--color-alert)" : "var(--color-cyan)" }}
+        >
+          {s?.active ? "■ STOP SESSION" : "▶ START SESSION"}
+        </button>
       </Panel>
 
       <Panel title="LOVABLE APPS">
         <div className="flex gap-4 text-[11px]">
           <div>
             <div className="text-text-dim tracking-wider">ACTIVE APPS</div>
-            <div className="text-cyan text-2xl">--</div>
+            <div className="text-cyan text-2xl">{t?.lovable?.apps ?? "--"}</div>
           </div>
           <div>
             <div className="text-text-dim tracking-wider">TOTAL VIEWS</div>
-            <div className="text-cyan text-2xl">--</div>
-            <div className="text-text-dim text-[9px]">tracking starts Phase 8</div>
+            <div className="text-cyan text-2xl">{t?.lovable?.views ?? "--"}</div>
+            <div className="text-text-dim text-[9px]">
+              {t?.lovable
+                ? `updated ${new Date(t.lovable.updated * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+                : "not configured — set JARVIS_LOVABLE_URL"}
+            </div>
           </div>
         </div>
       </Panel>

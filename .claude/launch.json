@@ -2,6 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "jarvis-backend",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "main.py"],
+      "cwd": "backend",
+      "port": 8735
+    },
+    {
       "name": "jarvis-ui",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],

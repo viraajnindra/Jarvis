@@ -31,6 +31,8 @@ export default function App() {
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [canvasUrl, setCanvasUrl] = useState<string>("");
   const [mode, setMode] = useState<"chat" | "voice">("chat");
+  const [notif, setNotif] = useState<{ title: string; body: string } | null>(null);
+  const notifTimer = useRef<number | undefined>(undefined);
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceState, setVoiceState] = useState("IDLE");
   const [transcript, setTranscript] = useState("");
@@ -80,6 +82,17 @@ export default function App() {
         case "activity":
           setActivity((a) => [{ text: msg.text, time: now() }, ...a]);
           break;
+        case "notification":
+          setNotif({ title: msg.title, body: msg.body });
+          window.clearTimeout(notifTimer.current);
+          notifTimer.current = window.setTimeout(() => setNotif(null), 20000);
+          setActivity((a) => [{ text: msg.title, time: now() }, ...a]);
+          // Native OS notification only if permission already granted — never
+          // prompt from a background message (the in-app toast always shows).
+          if ("Notification" in window && Notification.permission === "granted") {
+            new Notification(msg.title, { body: msg.body });
+          }
+          break;
         case "memory_list":
           setFacts(msg.facts);
           break;
@@ -126,6 +139,20 @@ export default function App() {
     <div className="h-full flex flex-col relative">
       <Header onOpenMemory={() => setMemoryOpen(true)} />
       {memoryOpen && <MemoryPane facts={facts} onClose={() => setMemoryOpen(false)} />}
+      {notif && (
+        <div className="hud-panel absolute top-14 right-4 z-50 max-w-sm px-4 py-3 border border-cyan-faint">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-cyan text-[11px] tracking-[0.2em]">{notif.title.toUpperCase()}</span>
+            <button
+              onClick={() => setNotif(null)}
+              className="text-text-dim hover:text-cyan text-xs"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="text-[11px] mt-1 whitespace-pre-wrap">{notif.body}</div>
+        </div>
+      )}
       <main className="flex-1 grid grid-cols-[25%_1fr_27%] gap-3 p-3 min-h-0">
         <TelemetryPanel t={telemetry} canvasUrl={canvasUrl} />
         {mode === "chat" ? (
