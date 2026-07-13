@@ -66,6 +66,37 @@ async def stream_local(
                     return
 
 
+async def complete_local(messages: list[dict]) -> str:
+    """Non-streaming local completion; returns the assistant text."""
+    async with httpx.AsyncClient(timeout=300) as client:
+        r = await client.post(
+            f"{config.OLLAMA_URL}/api/chat",
+            json={"model": config.LOCAL_MODEL, "messages": messages, "stream": False},
+        )
+        r.raise_for_status()
+        return r.json()["message"]["content"]
+
+
+async def complete_gemini(messages: list[dict], reason: str) -> str:
+    """Non-streaming Gemini completion (joined stream); returns the assistant text."""
+    parts: list[str] = []
+    async for event in stream_gemini(messages, reason):
+        if "token" in event:
+            parts.append(event["token"])
+    return "".join(parts)
+
+
+async def complete_big(messages: list[dict], reason: str) -> tuple[str, str]:
+    """Prefer Gemini for big-context work; fall back to local when capped or down.
+    Returns (text, model_used)."""
+    if db.gemini_calls_today() < config.GEMINI_DAILY_LIMIT:
+        try:
+            return await complete_gemini(messages, reason), "gemini"
+        except Exception:
+            log.exception("Gemini completion failed, falling back to local")
+    return await complete_local(messages), "local"
+
+
 def _gemini_key() -> str:
     key = keyring.get_password(config.KEYRING_SERVICE, "gemini_api_key")
     if not key:

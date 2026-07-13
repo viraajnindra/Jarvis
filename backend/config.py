@@ -35,6 +35,11 @@ KEYRING_SERVICE = "jarvis"
 CANVAS_BASE_URL = os.getenv("JARVIS_CANVAS_URL", "").rstrip("/")  # e.g. https://school.instructure.com
 CANVAS_SYNC_INTERVAL_S = int(os.getenv("JARVIS_CANVAS_SYNC_INTERVAL_S", "1800"))
 
+# Deep research
+REPORTS_DIR = DATA_DIR / "reports"
+RESEARCH_MAX_SOURCES = int(os.getenv("JARVIS_RESEARCH_MAX_SOURCES", "6"))
+RESEARCH_SOURCE_CHARS = int(os.getenv("JARVIS_RESEARCH_SOURCE_CHARS", "12000"))
+
 # Voice pipeline
 VOICES_DIR = DATA_DIR / "voices"
 TTS_VOICE = os.getenv("JARVIS_TTS_VOICE", "en_US-ryan-high")  # bake-off winner; swap freely
