@@ -111,6 +111,34 @@ export default function App() {
     return unsub;
   }, []);
 
+  const emergencyStop = () => {
+    jarvis.emergencyStop();
+    setVoiceActive(false);
+    setPending(null);
+    setStreaming("");
+  };
+
+  // Emergency stop: Ctrl+Shift+X — global via Tauri when running as the app,
+  // plus an in-window fallback for the plain-browser dev case.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/api/event")
+      .then(({ listen }) => listen("emergency-stop", emergencyStop))
+      .then((f) => (unlisten = f))
+      .catch(() => {}); // not running inside Tauri
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key.toUpperCase() === "X") {
+        e.preventDefault();
+        emergencyStop();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      unlisten?.();
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
   const send = (text: string) => {
     setMessages((m) => [...m, { role: "user", content: text, time: now() }]);
     jarvis.sendUserMsg(text, convRef.current);

@@ -1,7 +1,13 @@
 """System tools: open URL in default browser (ACT), launch whitelisted app (ACT),
-read/write files inside the workspace directory only."""
+read/write/move/open files inside the workspace directory only, clipboard write,
+user notifications.
+
+Phase 9 boundary: narrow typed tools only. No general computer control, no
+blind input injection (pyautogui and friends), no password handling, no delete
+outside the workspace — deletion tools don't exist at all."""
 
 import os
+import shutil
 import subprocess
 import webbrowser
 from pathlib import Path
@@ -106,6 +112,89 @@ def write_file(path: str, content: str) -> dict:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
     return {"written": path, "bytes": len(content.encode())}
+
+
+@tool(
+    "open_file",
+    "Open a file from the Jarvis workspace folder in its default application.",
+    {
+        "type": "object",
+        "properties": {"path": {"type": "string", "description": "relative path in workspace"}},
+        "required": ["path"],
+    },
+    ACT,
+    summary=lambda a: ("Open workspace file", a.get("path", "?"), ""),
+)
+def open_file(path: str) -> dict:
+    p = _safe_path(path)
+    if not p.is_file():
+        return {"error": f"not found: {path}"}
+    os.startfile(p)  # noqa: S606 - workspace-scoped path, default-app open only
+    return {"opened": path}
+
+
+@tool(
+    "move_file",
+    "Move or rename a file inside the Jarvis workspace folder. Never overwrites.",
+    {
+        "type": "object",
+        "properties": {
+            "src": {"type": "string", "description": "relative source path in workspace"},
+            "dst": {"type": "string", "description": "relative destination path in workspace"},
+        },
+        "required": ["src", "dst"],
+    },
+    ACT,
+    summary=lambda a: ("Move workspace file", f"{a.get('src', '?')} -> {a.get('dst', '?')}", ""),
+)
+def move_file(src: str, dst: str) -> dict:
+    s = _safe_path(src)
+    d = _safe_path(dst)
+    if not s.is_file():
+        return {"error": f"not found: {src}"}
+    if d.exists():
+        return {"error": f"destination exists: {dst} (overwrite not allowed)"}
+    d.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(s), str(d))
+    return {"moved": src, "to": dst}
+
+
+@tool(
+    "clipboard_write",
+    "Copy text to the user's clipboard.",
+    {
+        "type": "object",
+        "properties": {"text": {"type": "string"}},
+        "required": ["text"],
+    },
+    ACT,
+    summary=lambda a: ("Copy to clipboard", (a.get("text", "") or "")[:80], (a.get("text", "") or "")[:400]),
+)
+def clipboard_write(text: str) -> dict:
+    import pyperclip
+
+    pyperclip.copy(text)
+    return {"copied": True, "chars": len(text)}
+
+
+@tool(
+    "notification_show",
+    "Show the user a notification (in-app toast, plus OS notification if allowed).",
+    {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "body": {"type": "string"},
+        },
+        "required": ["title", "body"],
+    },
+    READ,
+)
+def notification_show(title: str, body: str) -> dict:
+    import events
+
+    events.notify(title[:80], body[:1000])
+    return {"shown": True}
 
 
 @tool(

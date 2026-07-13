@@ -116,6 +116,9 @@ class JarvisSocket {
   memoryAdd(content: string) {
     this.send({ type: "memory_add", content });
   }
+  emergencyStop() {
+    this.send({ type: "emergency_stop" });
+  }
   studyStart() {
     this.send({ type: "study_start" });
   }

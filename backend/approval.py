@@ -89,6 +89,16 @@ async def request_approval(action: str, target: str, detail: str = "") -> bool:
         _pending.pop(req_id, None)
 
 
+def deny_all() -> int:
+    """Emergency stop: deny every pending approval immediately. Returns count."""
+    n = 0
+    for fut in list(_pending.values()):
+        if not fut.done():
+            fut.set_result(False)
+            n += 1
+    return n
+
+
 def resolve(req_id: str, approved: bool) -> bool:
     """Called from the WS handler on approval_response. Returns False if unknown/expired."""
     fut = _pending.get(req_id)

@@ -51,6 +51,27 @@ class ToolSpec:
 
 REGISTRY: dict[str, ToolSpec] = {}
 
+# Emergency stop: engaged by the user (hotkey/UI), cleared when they speak again.
+# Checked at the single choke point below — no tool of any tier runs while engaged.
+_emergency_stop = False
+
+
+def engage_emergency_stop() -> None:
+    global _emergency_stop
+    _emergency_stop = True
+    log.warning("EMERGENCY STOP engaged")
+
+
+def clear_emergency_stop() -> None:
+    global _emergency_stop
+    if _emergency_stop:
+        log.info("emergency stop cleared")
+    _emergency_stop = False
+
+
+def emergency_stopped() -> bool:
+    return _emergency_stop
+
 
 def tool(
     name: str,
@@ -82,6 +103,13 @@ async def execute_tool(name: str, args: dict) -> dict:
     spec = REGISTRY.get(name)
     if spec is None:
         return {"error": f"unknown tool: {name}"}
+
+    if _emergency_stop:
+        approval.audit(name, args, spec.tier, "cancelled", "emergency stop engaged")
+        return {
+            "cancelled": "EMERGENCY STOP is engaged. All tool execution is halted "
+            "until the user sends a new message. Do not retry."
+        }
 
     if spec.tier in (ACT, SENSITIVE):
         action, target, detail = spec.summary(args)

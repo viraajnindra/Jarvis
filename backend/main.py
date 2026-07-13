@@ -199,6 +199,9 @@ async def converse(conv_id: str, user_text: str):
     the background post-turn pass. Yields protocol events; the caller decides how
     to deliver them (per-socket for text, broadcast + TTS for voice).
     """
+    # A new user turn is the explicit "resume" signal after an emergency stop.
+    tools.registry.clear_emergency_stop()
+
     reply = await _memory_command_reply(user_text)
     if reply is not None:
         db.add_message(conv_id, "assistant", reply)
@@ -285,6 +288,31 @@ async def ws_endpoint(ws: WebSocket) -> None:
             if mtype == "push_to_talk":
                 if voice_pipeline:
                     voice_pipeline.push_to_talk()
+                continue
+
+            if mtype == "emergency_stop":
+                tools.registry.engage_emergency_stop()
+                denied = approval.deny_all()
+                if task and not task.done():
+                    task.cancel()
+                if voice_pipeline:
+                    await voice_pipeline.stop()
+                approval.audit(
+                    "emergency_stop", {}, "SYSTEM", "executed",
+                    f"denied {denied} pending approval(s)",
+                )
+                await _broadcast(
+                    {"type": "activity", "text": "EMERGENCY STOP — all actions halted"}
+                )
+                await _broadcast(
+                    {
+                        "type": "notification",
+                        "title": "Emergency stop",
+                        "body": "All actions halted and pending approvals denied. "
+                        "Send a message to resume.",
+                    }
+                )
+                await ws.send_json({"type": "state", "state": "idle"})
                 continue
 
             if mtype in ("study_start", "study_stop"):
