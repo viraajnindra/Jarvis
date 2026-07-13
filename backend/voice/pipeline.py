@@ -20,7 +20,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 import numpy as np
 
 import config
-from voice import tts
+from voice import speech_text, tts
 
 log = logging.getLogger("jarvis.voice")
 
@@ -248,6 +248,10 @@ class VoicePipeline:
         """Speak any complete sentences in buf; return the trailing partial."""
         self._any_tokens = True
         while True:
+            # Inside an unclosed ``` fence: keep buffering so the whole block
+            # reaches the sanitizer at once instead of being read line by line.
+            if speech_text.has_open_fence(buf):
+                return buf
             m = SENTENCE_END.match(buf)
             if not m:
                 return buf
@@ -257,6 +261,9 @@ class VoicePipeline:
                 await self._speak(sentence)
 
     async def _speak(self, text: str) -> None:
+        text = speech_text.for_speech(text)
+        if not text:
+            return
         await self._set_state("SPEAKING")
         pcm, rate = await asyncio.to_thread(tts.synth_pcm, text)
         self._interrupt.clear()
