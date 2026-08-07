@@ -25,6 +25,11 @@ def _load(voice: str):
     return _voices[voice]
 
 
+def preload(voice: str | None = None) -> None:
+    """Load a voice before the first reply so its model-load delay is not silent."""
+    _load(voice or config.TTS_VOICE)
+
+
 def list_voices() -> list[str]:
     return sorted(p.stem for p in config.VOICES_DIR.glob("*.onnx"))
 

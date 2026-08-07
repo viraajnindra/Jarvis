@@ -1,11 +1,9 @@
-"""System telemetry: CPU/RAM/GPU + model/internet status, pushed over WS.
+"""System telemetry: CPU/RAM/GPU, service health, study, Gmail, and Canvas."""
 
-Study tracker / Lovable / Canvas figures arrive in Phases 6 and 8 — until then
-those fields are null and the UI renders placeholders.
-"""
-
+import asyncio
 import logging
 import socket
+import time
 
 import httpx
 import psutil
@@ -14,13 +12,17 @@ import config
 
 log = logging.getLogger("jarvis.telemetry")
 
+EMAIL_REFRESH_S = 60
+_email_panel_cache: dict | None = None
+_email_panel_updated_at = 0.0
+
 try:
     import pynvml
 
     pynvml.nvmlInit()
     _gpu = pynvml.nvmlDeviceGetHandleByIndex(0)
     _gpu_name = pynvml.nvmlDeviceGetName(_gpu)
-except Exception as e:  # noqa: BLE001 - no NVML => no GPU stats, keep serving
+except Exception as e:  # noqa: BLE001 - no NVML means no GPU stats
     log.warning("NVML unavailable: %s", e)
     _gpu = None
     _gpu_name = None
@@ -50,8 +52,8 @@ def _internet_up() -> bool:
 async def _model_online() -> bool:
     try:
         async with httpx.AsyncClient(timeout=3) as client:
-            r = await client.get(f"{config.OLLAMA_URL}/api/version")
-            return r.status_code == 200
+            response = await client.get(f"{config.OLLAMA_URL}/api/version")
+            return response.status_code == 200
     except httpx.HTTPError:
         return False
 
@@ -64,7 +66,7 @@ async def snapshot() -> dict:
         "model_online": await _model_online(),
         "internet": _internet_up(),
         "study": _study_stats(),
-        "lovable": _lovable_panel(),
+        "email": await _email_panel(),
         "canvas": _canvas_counts(),
     }
 
@@ -78,13 +80,31 @@ def _study_stats() -> dict | None:
         return None
 
 
-def _lovable_panel() -> dict | None:
+async def _email_panel() -> dict:
+    """Refresh Gmail once per minute; telemetry itself is pushed every few seconds."""
+    global _email_panel_cache, _email_panel_updated_at
     try:
-        import metrics
+        from tools import comms
 
-        return metrics.lovable_panel()
-    except Exception:  # noqa: BLE001
-        return None
+        if not comms.gmail_configured():
+            return {"configured": False, "unread": None, "total": None, "recent": []}
+        now = time.monotonic()
+        if _email_panel_cache is not None and now - _email_panel_updated_at < EMAIL_REFRESH_S:
+            return _email_panel_cache
+        summary = await asyncio.to_thread(comms.gmail_inbox_summary)
+        if "error" in summary:
+            return {"configured": False, "unread": None, "total": None, "recent": []}
+        _email_panel_cache = {"configured": True, **summary}
+        _email_panel_updated_at = now
+        return _email_panel_cache
+    except Exception:  # noqa: BLE001 - telemetry must never crash the loop
+        log.exception("email telemetry refresh failed")
+        return _email_panel_cache or {
+            "configured": True,
+            "unread": None,
+            "total": None,
+            "recent": [],
+        }
 
 
 def _canvas_counts() -> dict | None:

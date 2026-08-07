@@ -36,6 +36,9 @@ export default function App() {
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceState, setVoiceState] = useState("IDLE");
   const [transcript, setTranscript] = useState("");
+  const [voiceReply, setVoiceReply] = useState("");
+  const [restartOpen, setRestartOpen] = useState(false);
+  const [shutdownOpen, setShutdownOpen] = useState(false);
   const convRef = useRef<string | undefined>(
     localStorage.getItem("jarvis.conversation") ?? undefined,
   );
@@ -66,6 +69,7 @@ export default function App() {
           break;
         case "assistant_done":
           setStreaming("");
+          setVoiceReply(msg.content);
           setMessages((m) => [...m, { role: "assistant", content: msg.content, time: now() }]);
           setActivity((a) => [{ text: "Reply generated", time: now() }, ...a]);
           break;
@@ -98,9 +102,11 @@ export default function App() {
           break;
         case "voice_state":
           setVoiceState(msg.state);
+          if (msg.state === "IDLE" || msg.state === "ERROR") setVoiceActive(false);
           break;
         case "voice_transcript":
           setTranscript(msg.text);
+          setVoiceReply("");
           setMessages((m) => [...m, { role: "user", content: msg.text, time: now() }]);
           break;
         case "error":
@@ -116,6 +122,38 @@ export default function App() {
     setVoiceActive(false);
     setPending(null);
     setStreaming("");
+  };
+
+  const shutDown = async () => {
+    emergencyStop();
+    setShutdownOpen(false);
+    try {
+      await fetch("http://127.0.0.1:8735/shutdown", { method: "POST" });
+    } catch {
+      // The desktop shell should still close if the local service is unavailable.
+    }
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("quit_app");
+    } catch {
+      window.close();
+    }
+  };
+
+  const restart = async () => {
+    emergencyStop();
+    setRestartOpen(false);
+    try {
+      await fetch("http://127.0.0.1:8735/restart", { method: "POST" });
+    } catch {
+      // The desktop app restart can still recover the UI if the local service is unavailable.
+    }
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("restart_app");
+    } catch {
+      window.location.reload();
+    }
   };
 
   // Emergency stop: Ctrl+Shift+X — global via Tauri when running as the app,
@@ -144,14 +182,35 @@ export default function App() {
     jarvis.sendUserMsg(text, convRef.current);
   };
 
+  const startVoice = () => {
+    setTranscript("");
+    setVoiceReply("");
+    setVoiceState("STARTING");
+    setVoiceActive(true);
+    jarvis.voiceStart();
+  };
+
+  const stopVoice = () => {
+    jarvis.voiceStop();
+    setVoiceActive(false);
+    setVoiceState("IDLE");
+    setTranscript("");
+    setVoiceReply("");
+  };
+
   const toggleVoice = () => {
-    if (voiceActive) {
-      jarvis.voiceStop();
-      setVoiceActive(false);
-    } else {
-      jarvis.voiceStart();
-      setVoiceActive(true);
-    }
+    if (voiceActive) stopVoice();
+    else startVoice();
+  };
+
+  const openVoiceMode = () => {
+    setMode("voice");
+    if (!voiceActive) startVoice();
+  };
+
+  const openChatMode = () => {
+    if (voiceActive) stopVoice();
+    setMode("chat");
   };
 
   const respondApproval = (id: string, approved: boolean) => {
@@ -165,7 +224,60 @@ export default function App() {
 
   return (
     <div className="h-full flex flex-col relative">
-      <Header onOpenMemory={() => setMemoryOpen(true)} />
+      <Header
+        onOpenMemory={() => setMemoryOpen(true)}
+        onEmergencyStop={emergencyStop}
+        onRestart={() => setRestartOpen(true)}
+        onShutDown={() => setShutdownOpen(true)}
+      />
+      {restartOpen && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg/80 px-4">
+          <div className="hud-panel w-full max-w-md p-5">
+            <div className="panel-title">Confirm restart</div>
+            <p className="mt-3 text-sm text-text">
+              This will halt active work, restart the local J.A.R.V.I.S. service, and relaunch the app.
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                className="border border-cyan-faint px-4 py-2 text-[11px] text-text-dim hover:bg-cyan-faint"
+                onClick={() => setRestartOpen(false)}
+              >
+                CANCEL
+              </button>
+              <button
+                className="border border-cyan px-4 py-2 text-[11px] text-cyan hover:bg-cyan-faint"
+                onClick={restart}
+              >
+                RESTART
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {shutdownOpen && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg/80 px-4">
+          <div className="hud-panel w-full max-w-md p-5">
+            <div className="panel-title">Confirm shutdown</div>
+            <p className="mt-3 text-sm text-text">
+              This will halt active work, stop the local J.A.R.V.I.S. service, and close the app.
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                className="border border-cyan-faint px-4 py-2 text-[11px] text-text-dim hover:bg-cyan-faint"
+                onClick={() => setShutdownOpen(false)}
+              >
+                CANCEL
+              </button>
+              <button
+                className="border border-alert px-4 py-2 text-[11px] text-alert hover:bg-alert-dim"
+                onClick={shutDown}
+              >
+                SHUT DOWN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {memoryOpen && <MemoryPane facts={facts} onClose={() => setMemoryOpen(false)} />}
       {notif && (
         <div className="hud-panel absolute top-14 right-4 z-50 max-w-sm px-4 py-3 border border-cyan-faint">
@@ -192,15 +304,16 @@ export default function App() {
             onSend={send}
             draft={draft}
             setDraft={setDraft}
-            onVoiceMode={() => setMode("voice")}
+            onVoiceMode={openVoiceMode}
           />
         ) : (
           <VoiceMode
             active={voiceActive}
             voiceState={voiceState}
             transcript={transcript}
+            reply={voiceReply}
             onToggle={toggleVoice}
-            onChatMode={() => setMode("chat")}
+            onChatMode={openChatMode}
           />
         )}
         <div className="flex flex-col gap-3 min-h-0">

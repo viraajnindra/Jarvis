@@ -2,7 +2,7 @@ import Panel from "./Panel";
 import { Telemetry, jarvis } from "../ws";
 import { CpuIcon, RamIcon, GpuIcon, BrainIcon, GlobeIcon, CheckboxIcon, ExternalIcon } from "./icons";
 
-const DAY_GOAL_H = 6; // ring fills at this many hours studied today
+const DAY_GOAL_H = 6;
 
 function Ring({ label, fraction }: { label: string; fraction: number }) {
   const r = 34;
@@ -66,10 +66,7 @@ export default function TelemetryPanel({
 
       <Panel title="STUDY TRACKER">
         <div className="flex items-center gap-3">
-          <Ring
-            label={s ? s.today_h.toFixed(1) : "--"}
-            fraction={s ? s.today_h / DAY_GOAL_H : 0}
-          />
+          <Ring label={s ? s.today_h.toFixed(1) : "--"} fraction={s ? s.today_h / DAY_GOAL_H : 0} />
           <div className="text-[11px] space-y-2">
             <div>
               <div className="text-text-dim tracking-wider">TODAY</div>
@@ -92,9 +89,7 @@ export default function TelemetryPanel({
                   minHeight: "2px",
                 }}
               />
-              <span className="text-[9px] text-text-dim tracking-widest">
-                {["M", "T", "W", "T", "F", "S", "S"][i]}
-              </span>
+              <span className="text-[9px] text-text-dim tracking-widest">{["M", "T", "W", "T", "F", "S", "S"][i]}</span>
             </div>
           ))}
         </div>
@@ -103,26 +98,33 @@ export default function TelemetryPanel({
           className="mt-2 w-full border border-cyan-faint text-[10px] tracking-[0.2em] py-1.5 hover:bg-cyan-faint"
           style={{ color: s?.active ? "var(--color-alert)" : "var(--color-cyan)" }}
         >
-          {s?.active ? "■ STOP SESSION" : "▶ START SESSION"}
+          {s?.active ? "STOP SESSION" : "START SESSION"}
         </button>
       </Panel>
 
-      <Panel title="LOVABLE APPS">
+      <Panel title="EMAIL">
         <div className="flex gap-4 text-[11px]">
           <div>
-            <div className="text-text-dim tracking-wider">ACTIVE APPS</div>
-            <div className="text-cyan text-2xl">{t?.lovable?.apps ?? "--"}</div>
+            <div className="text-text-dim tracking-wider">UNREAD</div>
+            <div className="text-cyan text-2xl">{t?.email?.unread ?? "--"}</div>
           </div>
           <div>
-            <div className="text-text-dim tracking-wider">TOTAL VIEWS</div>
-            <div className="text-cyan text-2xl">{t?.lovable?.views ?? "--"}</div>
-            <div className="text-text-dim text-[9px]">
-              {t?.lovable
-                ? `updated ${new Date(t.lovable.updated * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
-                : "not configured — set JARVIS_LOVABLE_URL"}
-            </div>
+            <div className="text-text-dim tracking-wider">IN INBOX</div>
+            <div className="text-cyan text-2xl">{t?.email?.total ?? "--"}</div>
           </div>
         </div>
+        {t?.email?.configured ? (
+          <div className="mt-2 space-y-1 border-t border-cyan-faint pt-2 text-[10px]">
+            {t.email.recent.length ? t.email.recent.map((message) => (
+              <div key={message.id ?? `${message.from}-${message.date}`} className="truncate">
+                <span className="text-text-dim">{message.from || "Unknown sender"}: </span>
+                <span>{message.subject || "(no subject)"}</span>
+              </div>
+            )) : <div className="text-text-dim">Inbox is empty</div>}
+          </div>
+        ) : (
+          <div className="mt-2 text-[9px] text-text-dim">Not connected - authorize Gmail</div>
+        )}
       </Panel>
 
       <Panel title="CANVAS OVERVIEW">
@@ -139,9 +141,7 @@ export default function TelemetryPanel({
             </div>
           ))}
         </div>
-        {!t?.canvas && (
-          <div className="text-text-dim text-[9px] mt-1">Not connected — add Canvas token</div>
-        )}
+        {!t?.canvas && <div className="text-text-dim text-[9px] mt-1">Not connected - add Canvas token</div>}
         <button
           onClick={() => canvasUrl && window.open(canvasUrl, "_blank")}
           className="mt-2 w-full border border-cyan-faint text-cyan text-[10px] tracking-[0.2em] py-1.5 hover:bg-cyan-faint flex items-center justify-center gap-1"
@@ -158,27 +158,14 @@ export default function TelemetryPanel({
           label={t?.gpu ? `GPU (${t.gpu.name.replace("NVIDIA GeForce ", "")})` : "GPU"}
           value={t?.gpu ? `${t.gpu.util_pct}%` : "--"}
         />
-        <StatRow
-          icon={<BrainIcon size={14} />}
-          label="LOCAL MODEL"
-          value={t ? (t.model_online ? "ONLINE" : "OFFLINE") : "--"}
-          ok={t?.model_online}
-        />
-        <StatRow
-          icon={<GlobeIcon size={14} />}
-          label="INTERNET"
-          value={t ? (t.internet ? "CONNECTED" : "DOWN") : "--"}
-          ok={t?.internet}
-        />
+        <StatRow icon={<BrainIcon size={14} />} label="LOCAL MODEL" value={t ? (t.model_online ? "ONLINE" : "OFFLINE") : "--"} ok={t?.model_online} />
+        <StatRow icon={<GlobeIcon size={14} />} label="INTERNET" value={t ? (t.internet ? "CONNECTED" : "DOWN") : "--"} ok={t?.internet} />
       </Panel>
 
       <div className="hud-panel mt-auto px-3 py-2 flex items-center gap-2 text-[10px] tracking-[0.2em]">
         <span
           className="w-2 h-2 rounded-full pulse-soft"
-          style={{
-            background:
-              t && t.model_online && t.internet ? "var(--color-ok)" : "var(--color-alert)",
-          }}
+          style={{ background: t && t.model_online && t.internet ? "var(--color-ok)" : "var(--color-alert)" }}
         />
         <span style={{ color: t && t.model_online && t.internet ? "var(--color-ok)" : "var(--color-alert)" }}>
           {t ? (t.model_online && t.internet ? "ALL SYSTEMS OPERATIONAL" : "DEGRADED") : "CONNECTING..."}

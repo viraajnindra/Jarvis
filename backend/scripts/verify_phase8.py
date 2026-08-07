@@ -71,17 +71,15 @@ async def main() -> None:
     ok("stale session closed", study.close_stale_sessions() == 1)
 
     # Metrics: record -> event -> latest -> series
-    metrics.record("lovable.views", 100)
-    metrics.record("lovable.views", 150)
-    metrics.record("lovable.apps", 3)
-    panel = metrics.lovable_panel()
-    ok("lovable panel latest values", panel["views"] == 150 and panel["apps"] == 3)
-    ok("metric series", len(metrics.series("lovable.views", 1)) == 2)
+    metrics.record("project.views", 100)
+    metrics.record("project.views", 150)
+    panel = metrics.latest("project.")
+    ok("latest metric value", panel["project.views"]["value"] == 150)
+    ok("metric series", len(metrics.series("project.views", 1)) == 2)
     ok(
         "metric event emitted",
         any(e["name"] == "project.metric.recorded" for e in events.recent(5)),
     )
-    ok("lovable source registered", "lovable" in metrics.SOURCES)
     ok("unknown source rejected", "error" in await metrics.poll_source("nope"))
 
     # Proactive: quiet without data, fires with a due assignment
@@ -112,7 +110,7 @@ async def main() -> None:
     jobs = {j.id for j in scheduler._sched.get_jobs()}
     ok(
         "scheduler jobs",
-        {"canvas_sync", "metric_lovable", "morning_brief", "due_alert", "study_hygiene"}
+        {"canvas_sync", "morning_brief", "due_alert", "study_hygiene"}
         <= jobs,
         str(sorted(jobs)),
     )

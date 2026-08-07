@@ -18,7 +18,9 @@ WS protocol (JSON, one object per frame):
 import asyncio
 import json
 import logging
+import os
 import re
+import sys
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -42,6 +44,8 @@ log = logging.getLogger("jarvis.main")
 app = FastAPI(title="jarvis-backend")
 
 _clients: set[WebSocket] = set()
+_server: uvicorn.Server | None = None
+_restart_requested = False
 TELEMETRY_INTERVAL_S = 3
 
 # Voice conversation id — the voice pipeline shares one rolling conversation.
@@ -169,6 +173,39 @@ def health() -> dict:
     }
 
 
+@app.post("/shutdown")
+async def shutdown() -> dict:
+    """Gracefully stop the local service after the desktop app confirms shutdown."""
+    tools.registry.engage_emergency_stop()
+    approval.deny_all()
+    if voice_pipeline:
+        await voice_pipeline.stop()
+    if _server:
+        _server.should_exit = True
+    return {"status": "shutting_down"}
+
+
+async def _restart_process() -> None:
+    """Let the HTTP response flush, then replace the backend process in place."""
+    await asyncio.sleep(0.25)
+    os.execv(sys.executable, [sys.executable, *sys.argv])
+
+
+@app.post("/restart")
+async def restart() -> dict:
+    """Restart the local backend after stopping active work safely."""
+    global _restart_requested
+    if _restart_requested:
+        return {"status": "restart_already_requested"}
+    _restart_requested = True
+    tools.registry.engage_emergency_stop()
+    approval.deny_all()
+    if voice_pipeline:
+        await voice_pipeline.stop()
+    asyncio.create_task(_restart_process())
+    return {"status": "restarting"}
+
+
 REMEMBER_RE = re.compile(r"^(?:jarvis[,!]?\s+)?remember\s+(?:that\s+)?(.+)$", re.I | re.S)
 FORGET_RE = re.compile(r"^(?:jarvis[,!]?\s+)?forget\s+(?:about\s+|that\s+)?(.+)$", re.I | re.S)
 
@@ -279,7 +316,13 @@ async def ws_endpoint(ws: WebSocket) -> None:
 
             if mtype == "voice_start":
                 if voice_pipeline:
-                    await voice_pipeline.start()
+                    try:
+                        await voice_pipeline.start()
+                    except Exception:  # noqa: BLE001 - startup failure is recoverable
+                        await ws.send_json({
+                            "type": "error",
+                            "message": "Voice system could not start; check the backend log.",
+                        })
                 continue
             if mtype == "voice_stop":
                 if voice_pipeline:
@@ -376,4 +419,5 @@ async def ws_endpoint(ws: WebSocket) -> None:
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host=config.HOST, port=config.PORT)
+    _server = uvicorn.Server(uvicorn.Config(app, host=config.HOST, port=config.PORT))
+    _server.run()

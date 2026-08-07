@@ -67,7 +67,7 @@ Jarvis/
 │   │   └── research.py      # deep research orchestration
 │   ├── memory/              # store, recall, fact extraction
 │   ├── voice/               # wakeword, VAD, stt, tts pipeline
-│   └── metrics/             # study tracker, lovable poller
+│   └── metrics/             # study tracker and generic metric utilities
 ├── frontend/                # Tauri 2 + React
 │   └── src/
 │       ├── views/           # ChatMode.tsx, VoiceMode.tsx
@@ -99,7 +99,7 @@ Three columns: left telemetry (~25%), center main panel (~48%), right tools (~27
 
 ### Left column — SYSTEM TELEMETRY (both modes)
 1. **STUDY TRACKER**: circular progress ring with `6.2 HOURS` centered; right side `TODAY 6.2 hrs` / `WEEK 32.8 hrs`; small week sparkline with `M T W T F S S` axis below.
-2. **LOVABLE APPS**: `ACTIVE APPS 3` | `TOTAL VIEWS 12.4K` with `+18% vs last 7d` and mini bar chart.
+2. **EMAIL**: unread Inbox count, total Inbox count, and recent message headers.
 3. **CANVAS OVERVIEW**: checkbox rows `3 Assignments Due Soon`, `2 Ungraded Submissions`, `1 New Announcement`; `OPEN CANVAS ↗` button.
 4. **SYSTEM STATUS**: icon rows — `CPU USAGE 18%`, `RAM USAGE 32%`, `GPU (RTX 4080) 24%`, `LOCAL MODEL ONLINE` (green), `INTERNET CONNECTED` (green).
 5. Footer pill: green dot + `ALL SYSTEMS OPERATIONAL`.
@@ -107,7 +107,7 @@ Three columns: left telemetry (~25%), center main panel (~48%), right tools (~27
 ### Right column (both modes)
 1. **QUICK TOOLS**: 3×2 grid of icon buttons — Deep Research, Summarize Video, Canvas Sync, Open Website, Launch App, Send Message.
 2. **PENDING ACTION** (red card, visible only when approval pending): heading `PENDING ACTION`, warning triangle icon, text "J.A.R.V.I.S. wants to perform an automation action on your system.", labeled fields `ACTION:` (e.g. Open website) + `TARGET:` (e.g. https://calendar.google.com), filled red `CONFIRM OS ACTION` button, outlined `CANCEL` button.
-3. **RECENT ACTIVITY**: icon + text + timestamp rows (e.g. `Canvas assignments synced 10:42 PM`, `Lovable metrics updated 10:41 PM`, `YouTube transcript retrieved 10:40 PM`, `Study session logged (2.1h) 10:39 PM`, `Discord summary sent 10:38 PM`); `VIEW FULL LOG` button.
+3. **RECENT ACTIVITY**: icon + text + timestamp rows (e.g. `Canvas assignments synced 10:42 PM`, `Email inbox refreshed 10:41 PM`, `YouTube transcript retrieved 10:40 PM`, `Study session logged (2.1h) 10:39 PM`, `Discord summary sent 10:38 PM`); `VIEW FULL LOG` button.
 
 ### Center panel — voice mode (mockup #1)
 - Panel header: `VOICE SYSTEM` + pulsing dot + state text (`LISTENING...`).
@@ -222,11 +222,11 @@ Three memory types: **profile** (name, classes, style, goals), **episodic** (dec
 ### Phase 8 — Metrics + proactive assistant
 1. Event system: `study.session.started/finished`, `canvas.assignment.synced`, `research.report.completed`, `message.sent`, `project.metric.recorded`. Dashboard panels derive from events.
 2. Study tracker: manual start/stop via voice/chat/UI timer; APScheduler aggregates daily/weekly → telemetry chart (mockup's 6.2h/32.8h widget). Passive window tracking only later, opt-in, visible.
-3. Lovable app stats: no public metrics API — scheduled Playwright scrape of dashboard (reuse Phase 4 browser tool), snapshots into `metrics_log`, trend chart.
+3. Email dashboard: cached Inbox totals and recent message headers from the authenticated Gmail account.
 4. Proactive rules: morning brief (assignments due, day summary), "due tomorrow, not submitted" alert. Tauri notifications — suggestions only, never autonomous actions.
 5. Extensible: metric source = plugin (poll function + chart config), so "track anything" is additive.
 
-**Verify**: study session logged via voice shows in tracker; Lovable numbers refresh on schedule; morning brief fires.
+**Verify**: study session logged via voice shows in tracker; email panel refreshes; morning brief fires.
 
 ### Phase 9 — Limited computer control (last, optional)
 Narrow typed tools only: `app.launch`, `file.open`, `file.move` (workspace-scoped), `clipboard.write`, `notification.show`. No general "control my computer" permission, no pyautogui blind clicking, no password handling. Emergency stop hotkey.

@@ -21,7 +21,12 @@ export type ServerMsg =
         active_since: number | null;
         active_note: string | null;
       } | null;
-      lovable: { apps: number | null; views: number | null; updated: number } | null;
+      email: {
+        configured: boolean;
+        unread: number | null;
+        total: number | null;
+        recent: { id?: string; from: string; subject: string; date: string }[];
+      } | null;
       canvas: { due_soon: number; ungraded: number; announcements: number } | null;
     }
   | { type: "approval_request"; id: string; action: string; target: string; detail?: string }

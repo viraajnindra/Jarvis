@@ -2,8 +2,8 @@
 
 Everything is local (mic and speakers are on the same machine as the backend), so
 the pipeline captures and plays audio directly. State transitions broadcast over WS
-so the voice-mode UI can reflect them. Barge-in: the wakeword firing during playback
-stops speech and starts listening.
+so the voice-mode UI can reflect them. Push-to-talk can interrupt a reply; wake-word
+detection pauses during playback because speaker audio otherwise reaches the mic.
 
 States: IDLE LISTENING TRANSCRIBING THINKING SPEAKING ERROR
 """
@@ -50,6 +50,7 @@ class VoicePipeline:
         self._vad = None
         self._stt = None
         self._any_tokens = False
+        self._wake_resume_at = 0.0
 
     # ---- model loading (lazy, off the event loop) ----
     def _load_models(self) -> None:
@@ -73,7 +74,17 @@ class VoicePipeline:
         if self._running:
             return
         self._loop = asyncio.get_running_loop()
-        await asyncio.to_thread(self._load_models)
+        await self._set_state("STARTING")
+        try:
+            await asyncio.to_thread(self._load_models)
+            # Piper's first load takes noticeably longer than later synthesis.
+            # Do it while the voice system starts instead of after the UI says
+            # SPEAKING, which otherwise creates a silent first reply.
+            await asyncio.to_thread(tts.preload)
+        except Exception:  # noqa: BLE001 - tell the UI why voice did not start
+            log.exception("voice startup failed")
+            await self._set_state("ERROR")
+            raise
         self._running = True
         self._open_stream()
         self._task = asyncio.create_task(self._run())
@@ -129,7 +140,18 @@ class VoicePipeline:
             while self._running:
                 frame = await self._next_frame()
                 prebuffer.append(frame)
-                fired = self._ptt.is_set()
+                response_in_flight = self._respond_task and not self._respond_task.done()
+                # Speaker output can be transcribed as a new command without
+                # acoustic echo cancellation. Keep wake-word detection paused for
+                # an entire reply plus its short audio tail; Push-to-Talk remains
+                # an explicit interruption at any time.
+                if (
+                    (response_in_flight or time.monotonic() < self._wake_resume_at)
+                    and not self._ptt.is_set()
+                ):
+                    continue
+                ptt_fired = self._ptt.is_set()
+                fired = ptt_fired
                 if not fired:
                     score = self._oww.predict(frame)[config.WAKEWORD]
                     fired = score >= config.WAKEWORD_THRESHOLD
@@ -138,6 +160,9 @@ class VoicePipeline:
                 if not fired:
                     continue
                 self._ptt.clear()
+                if ptt_fired:
+                    # Do not include Jarvis's just-played audio in a manual turn.
+                    prebuffer.clear()
                 self._reset_wakeword()
                 await self._cancel_response()  # barge-in: kill any in-flight reply
                 await self._handle_utterance(list(prebuffer))
@@ -177,15 +202,35 @@ class VoicePipeline:
             await self._set_state("LISTENING")
             return
         await self._emit({"type": "voice_transcript", "text": text})
+        # Publish the transition before scheduling the reply.  The audio queue can
+        # contain several frames while STT is running; without an await here, the
+        # main loop may drain all of them before this task gets its first timeslice.
+        # That leaves the client on "HEARD" and can even let a false wakeword cancel
+        # the newly-created task before it starts.
+        await self._set_state("THINKING")
         # Respond in a background task so the main loop keeps watching for barge-in.
         self._respond_task = asyncio.create_task(self._respond_and_reset(text))
+        # Give the task a chance to enter its first asynchronous operation before
+        # returning to a potentially backlogged microphone queue.
+        await asyncio.sleep(0)
 
     async def _respond_and_reset(self, text: str) -> None:
+        failed = False
         try:
             await self._respond(text)
+        except asyncio.CancelledError:
+            # Expected for a wakeword barge-in or when voice mode is stopped.
+            raise
+        except Exception as exc:  # noqa: BLE001 - surface background-task failures to the UI
+            failed = True
+            log.exception("voice response failed")
+            await self._emit({
+                "type": "error",
+                "message": f"Voice request failed: {type(exc).__name__}",
+            })
         finally:
             if self._running:
-                await self._set_state("LISTENING")
+                await self._set_state("ERROR" if failed else "LISTENING")
 
     async def _record_until_silence(self, prebuffer: list[np.ndarray]) -> np.ndarray:
         # The pre-buffer holds ~1s of audio from BEFORE the wakeword fired — words
@@ -223,7 +268,10 @@ class VoicePipeline:
 
     # ---- agent + TTS ----
     async def _respond(self, text: str) -> None:
-        await self._set_state("THINKING")
+        # _cancel_response() sets this for every new utterance, including the
+        # normal handoff from wakeword capture. This response is now current;
+        # later barge-ins will set it again and cancel this task.
+        self._interrupt.clear()
         buf = ""
         final = ""
         self._any_tokens = False
@@ -264,9 +312,14 @@ class VoicePipeline:
         text = speech_text.for_speech(text)
         if not text:
             return
-        await self._set_state("SPEAKING")
         pcm, rate = await asyncio.to_thread(tts.synth_pcm, text)
+        # Report SPEAKING only when audio is ready to leave the speakers. Piper
+        # synthesis can take a moment, especially before its voice is cached.
+        if self._interrupt.is_set() or not self._running:
+            return
         self._interrupt.clear()
+        self._speaking = True
+        await self._set_state("SPEAKING")
         await asyncio.to_thread(self._play, pcm, rate)
         # Cancelled mid-speech (barge-in): abort the rest of the reply cleanly.
         if self._interrupt.is_set():
@@ -277,7 +330,6 @@ class VoicePipeline:
         # cancel this task) if the wakeword fires — here we just honor the flag.
         import sounddevice as sd
 
-        self._speaking = True
         block = rate // 10  # 100 ms
         try:
             with sd.OutputStream(samplerate=rate, channels=1, dtype="int16") as out:
@@ -287,6 +339,7 @@ class VoicePipeline:
                     out.write(pcm[i : i + block])
         finally:
             self._speaking = False
+            self._wake_resume_at = time.monotonic() + config.VOICE_OUTPUT_COOLDOWN_MS / 1000
 
     async def _set_state(self, state: str) -> None:
         await self._emit({"type": "voice_state", "state": state})

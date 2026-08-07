@@ -4,6 +4,7 @@ import { jarvis } from "../ws";
 
 const STATE_TEXT: Record<string, { big: string; sub: string }> = {
   IDLE: { big: "VOICE SYSTEM STANDBY", sub: "Click the mic to activate" },
+  STARTING: { big: "STARTING VOICE SYSTEM", sub: "Loading microphone and wake-word detector..." },
   LISTENING: { big: "VOICE SYSTEM ACTIVE", sub: "Listening for your command..." },
   TRANSCRIBING: { big: "TRANSCRIBING", sub: "Understanding what you said..." },
   THINKING: { big: "PROCESSING", sub: "Working on it, Boss..." },
@@ -35,17 +36,19 @@ export default function VoiceMode({
   active,
   voiceState,
   transcript,
+  reply,
   onToggle,
   onChatMode,
 }: {
   active: boolean;
   voiceState: string;
   transcript: string;
+  reply: string;
   onToggle: () => void;
   onChatMode: () => void;
 }) {
   const st = STATE_TEXT[voiceState] ?? STATE_TEXT.IDLE;
-  const listening = ["LISTENING", "TRANSCRIBING", "THINKING", "SPEAKING"].includes(voiceState);
+  const listening = ["STARTING", "LISTENING", "TRANSCRIBING", "THINKING", "SPEAKING"].includes(voiceState);
 
   return (
     <div className="hud-panel h-full flex flex-col">
@@ -86,7 +89,20 @@ export default function VoiceMode({
           </div>
         )}
 
-        <div className="text-text-dim text-[11px]">Say “Hey Jarvis” or click to speak</div>
+        {reply && (
+          <div className="text-center max-w-lg border border-cyan-faint px-4 py-2 text-sm">
+            <span className="text-text-dim text-[10px] tracking-widest block mb-1">REPLY</span>
+            {reply}
+          </div>
+        )}
+
+        <div className="text-text-dim text-[11px]">
+          {!active
+            ? "Click the mic to enable wake-word listening"
+            : voiceState === "SPEAKING"
+              ? "Use Push to Talk to interrupt"
+              : "Say \"Hey Jarvis\" or use Push to Talk"}
+        </div>
 
         <div className="flex items-center gap-3">
           <button

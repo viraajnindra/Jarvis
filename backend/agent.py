@@ -16,6 +16,15 @@ from tools import execute_tool, tool_schemas
 log = logging.getLogger("jarvis.agent")
 
 MAX_ACTIONS_PER_TASK = 15
+MAX_EMPTY_RESPONSE_RETRIES = 1
+EMPTY_RESPONSE_RETRY_PROMPT = (
+    "Your previous response was empty. Give the user a concise, plain-language "
+    "answer now. If a tool result is available, use it; do not return an empty response."
+)
+EMPTY_RESPONSE_FALLBACK = (
+    "I completed the request, but my response engine returned no usable text. "
+    "Please try that once more, Boss."
+)
 
 SYSTEM_PROMPT = """You are J.A.R.V.I.S., a personal assistant. Address the user as "Boss".
 Be terse, precise, and dryly witty. Never invent facts; say when you don't know.
@@ -53,8 +62,10 @@ async def run_turn(
 
     full: list[str] = []
     actions = 0
+    empty_retries = 0
     for _iteration in range(config.AGENT_MAX_ITERATIONS):
         pending_tool_calls = []
+        iteration_has_text = False
         if which == "gemini":
             stream = router.stream_gemini(messages, reason="chat")
         else:
@@ -62,11 +73,23 @@ async def run_turn(
         async for event in stream:
             if "token" in event:
                 full.append(event["token"])
+                iteration_has_text = iteration_has_text or bool(event["token"].strip())
                 yield {"assistant_token": event["token"]}
             if "tool_calls" in event:
                 pending_tool_calls.extend(event["tool_calls"])
 
         if not pending_tool_calls:
+            if not iteration_has_text:
+                if empty_retries < MAX_EMPTY_RESPONSE_RETRIES:
+                    empty_retries += 1
+                    messages = list(messages) + [
+                        {"role": "user", "content": EMPTY_RESPONSE_RETRY_PROMPT}
+                    ]
+                    log.warning("model returned an empty completion; retrying once")
+                    continue
+                log.error("model returned an empty completion after retry")
+                full.append(EMPTY_RESPONSE_FALLBACK)
+                yield {"assistant_token": EMPTY_RESPONSE_FALLBACK}
             break
 
         messages = list(messages) + [

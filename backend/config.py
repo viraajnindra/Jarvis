@@ -35,9 +35,7 @@ KEYRING_SERVICE = "jarvis"
 CANVAS_BASE_URL = os.getenv("JARVIS_CANVAS_URL", "").rstrip("/")  # e.g. https://school.instructure.com
 CANVAS_SYNC_INTERVAL_S = int(os.getenv("JARVIS_CANVAS_SYNC_INTERVAL_S", "1800"))
 
-# Phase 8: metrics + proactive
-LOVABLE_URL = os.getenv("JARVIS_LOVABLE_URL", "")  # your Lovable dashboard; empty = dormant
-LOVABLE_POLL_INTERVAL_S = int(os.getenv("JARVIS_LOVABLE_POLL_INTERVAL_S", "21600"))  # 6h
+# Phase 8: proactive
 BRIEF_HOUR = int(os.getenv("JARVIS_BRIEF_HOUR", "8"))       # morning brief (local time)
 DUE_ALERT_HOUR = int(os.getenv("JARVIS_DUE_ALERT_HOUR", "18"))  # due-tomorrow check
 
@@ -59,3 +57,4 @@ VAD_SILENCE_MS = int(os.getenv("JARVIS_VAD_SILENCE_MS", "1000"))  # end-of-speec
 VAD_START_TIMEOUT_MS = int(os.getenv("JARVIS_VAD_START_TIMEOUT_MS", "4000"))  # wait for speech
 MAX_UTTERANCE_MS = int(os.getenv("JARVIS_MAX_UTTERANCE_MS", "15000"))
 PREBUFFER_FRAMES = 12  # ~1s of audio kept before the wakeword fires
+VOICE_OUTPUT_COOLDOWN_MS = int(os.getenv("JARVIS_VOICE_OUTPUT_COOLDOWN_MS", "750"))
