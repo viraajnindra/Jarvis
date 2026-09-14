@@ -7,6 +7,7 @@ import wave
 import numpy as np
 
 import config
+from voice import elevenlabs
 
 log = logging.getLogger("jarvis.voice.tts")
 
@@ -35,6 +36,7 @@ def list_voices() -> list[str]:
 
 
 def synth_wav_bytes(text: str, voice: str | None = None) -> bytes:
+    """Synthesize a local Piper WAV, used for previews and cloud fallback."""
     v = _load(voice or config.TTS_VOICE)
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
@@ -42,10 +44,20 @@ def synth_wav_bytes(text: str, voice: str | None = None) -> bytes:
     return buf.getvalue()
 
 
-def synth_pcm(text: str, voice: str | None = None) -> tuple[np.ndarray, int]:
-    """Return (int16 mono samples, sample_rate) for direct playback."""
+def synth_local_pcm(text: str, voice: str | None = None) -> tuple[np.ndarray, int]:
+    """Return locally synthesized (int16 mono samples, sample_rate)."""
     raw = synth_wav_bytes(text, voice)
     with wave.open(io.BytesIO(raw), "rb") as wf:
         rate = wf.getframerate()
         frames = wf.readframes(wf.getnframes())
     return np.frombuffer(frames, dtype=np.int16), rate
+
+
+def synth_pcm(text: str, voice: str | None = None) -> tuple[np.ndarray, int]:
+    """Use ElevenLabs when eligible, otherwise synthesize with local Piper."""
+    if config.TTS_PROVIDER == "elevenlabs":
+        try:
+            return elevenlabs.synth_pcm(text)
+        except elevenlabs.ElevenLabsUnavailable as exc:
+            log.warning("ElevenLabs TTS unavailable; using Piper: %s", exc)
+    return synth_local_pcm(text, voice)

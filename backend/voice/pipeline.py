@@ -21,6 +21,7 @@ import numpy as np
 
 import config
 from voice import speech_text, tts
+from voice import elevenlabs
 
 log = logging.getLogger("jarvis.voice")
 
@@ -262,6 +263,11 @@ class VoicePipeline:
         return np.concatenate(chunks) if chunks else np.array([], dtype=np.int16)
 
     def _transcribe(self, audio: np.ndarray) -> str:
+        if config.STT_PROVIDER == "elevenlabs":
+            try:
+                return elevenlabs.transcribe_pcm(audio)
+            except elevenlabs.ElevenLabsUnavailable as exc:
+                log.warning("ElevenLabs STT unavailable; using faster-whisper: %s", exc)
         pcm = audio.astype(np.float32) / 32768.0
         segments, _ = self._stt.transcribe(pcm, language="en", beam_size=1)
         return " ".join(s.text for s in segments)

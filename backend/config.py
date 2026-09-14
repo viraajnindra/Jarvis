@@ -47,6 +47,23 @@ RESEARCH_SOURCE_CHARS = int(os.getenv("JARVIS_RESEARCH_SOURCE_CHARS", "12000"))
 # Voice pipeline
 VOICES_DIR = DATA_DIR / "voices"
 TTS_VOICE = os.getenv("JARVIS_TTS_VOICE", "en_US-ryan-high")  # bake-off winner; swap freely
+TTS_PROVIDER = os.getenv("JARVIS_TTS_PROVIDER", "elevenlabs").lower()
+STT_PROVIDER = os.getenv("JARVIS_STT_PROVIDER", "elevenlabs").lower()
+
+# ElevenLabs is optional: if its key, network, or credit allowance is unavailable,
+# the voice pipeline automatically uses the local Piper / faster-whisper providers.
+# The API key itself is stored in Windows Credential Manager as
+# "jarvis" / "elevenlabs_api_key", never in this configuration file.
+# George is a built-in voice that works through the free-tier API. Voice Library
+# voices (including the previously selected sB7vwSCyX0tQmU24cW2C) require a paid
+# ElevenLabs plan; override this ID in the environment after upgrading.
+ELEVENLABS_VOICE_ID = os.getenv("JARVIS_ELEVENLABS_VOICE_ID", "JBFqnCBsd6RMkjVDRZzb")
+ELEVENLABS_TTS_MODEL = os.getenv("JARVIS_ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5")
+ELEVENLABS_STT_MODEL = os.getenv("JARVIS_ELEVENLABS_STT_MODEL", "scribe_v2")
+ELEVENLABS_USAGE_FRACTION = float(os.getenv("JARVIS_ELEVENLABS_USAGE_FRACTION", "0.90"))
+ELEVENLABS_USAGE_CACHE_SECONDS = int(os.getenv("JARVIS_ELEVENLABS_USAGE_CACHE_SECONDS", "60"))
+ELEVENLABS_TIMEOUT_SECONDS = float(os.getenv("JARVIS_ELEVENLABS_TIMEOUT_SECONDS", "15"))
+
 WAKEWORD = "hey_jarvis_v0.1"
 WAKEWORD_THRESHOLD = float(os.getenv("JARVIS_WAKEWORD_THRESHOLD", "0.5"))
 STT_MODEL = os.getenv("JARVIS_STT_MODEL", "small")

@@ -15,7 +15,8 @@ the computer.
 - **Local AI by default** — routes everyday prompts to Qwen via Ollama and keeps
   embeddings, memory, voice processing, and application data local.
 - **Voice assistant pipeline** — openWakeWord → VAD → faster-whisper → agent →
-  Piper TTS, with push-to-talk interruption and speaker-echo protection.
+  Piper TTS, with optional ElevenLabs STT/TTS and automatic local fallback when
+  the cloud provider is unavailable or near its configured credit cutoff.
 - **Human-in-the-loop automation** — tool calls are assigned risk tiers; sensitive
   actions require an approval card before trusted code executes them.
 - **Productivity integrations** — Gmail, Canvas LMS, Discord, web research,
